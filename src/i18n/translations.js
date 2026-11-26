@@ -23,7 +23,7 @@ export const translations = {
     nickname: 'ناوی یاریزان',
     nicknamePlaceholder: 'ناوەکەت بنووسە',
     join: 'بەشداری بکە',
-    joining: 'چوونەژوورەوە…',
+    joining: 'بەشداریکردن…',
     joinHint: 'کۆدی ٦ ژمارەیی بنووسە یان لینکەکە بکەرەوە',
     orHost: 'یان یاری دەست پێ بکە',
     copyJoinLink: 'کۆپیکردنی لینکی بەشداری',

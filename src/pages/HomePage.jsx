@@ -12,7 +12,7 @@ import ProfileMenu from '../components/ProfileMenu'
 export default function HomePage() {
   const { t, locale } = useLocale()
   const { user } = useAuth()
-  const { joinGame, hostGame } = useGame()
+  const { joinGame, hostGame, session } = useGame()
   const navigate = useNavigate()
   const [mode, setMode] = useState(null)
   const [pin, setPin] = useState('')
@@ -24,7 +24,6 @@ export default function HomePage() {
   const pinRef = useRef(null)
   const nameRef = useRef(null)
   const joinLock = useRef(false)
-  const deepLinkTried = useRef(false)
 
   const refreshQuizzes = useCallback(async () => {
     if (!user) {
@@ -55,8 +54,8 @@ export default function HomePage() {
     const url = new URL(window.location.href)
     if (!url.searchParams.has('pin')) return
     url.searchParams.delete('pin')
-    const next = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : '') + url.hash
-    window.history.replaceState({}, '', next)
+    const q = url.searchParams.toString()
+    window.history.replaceState({}, '', url.pathname + (q ? `?${q}` : '') + url.hash)
   }, [])
 
   const attemptJoin = useCallback(
@@ -64,6 +63,14 @@ export default function HomePage() {
       const cleanPin = normalizeDigits(pinValue)
       const trimmed = String(nameValue || '').trim().slice(0, 16)
       if (cleanPin.length < 6 || !trimmed || joinLock.current) return false
+
+      // Already seated in this room — just open lobby
+      if (session?.role === 'player' && session.pin === cleanPin) {
+        clearPinFromUrl()
+        navigate('/lobby')
+        return true
+      }
+
       joinLock.current = true
       setJoining(true)
       setError('')
@@ -88,7 +95,7 @@ export default function HomePage() {
         setJoining(false)
       }
     },
-    [joinGame, navigate, t, clearPinFromUrl],
+    [joinGame, navigate, t, clearPinFromUrl, session],
   )
 
   useEffect(() => {
@@ -103,10 +110,18 @@ export default function HomePage() {
     if (!fromUrl) return
     setPin(fromUrl)
     setMode(null)
+
+    if (session?.role === 'player' && session.pin === fromUrl) {
+      clearPinFromUrl()
+      navigate('/lobby')
+      return
+    }
+
     const nick = (localStorage.getItem('pirs-nick') || user?.displayName || '').trim()
     if (fromUrl.length === 6 && nick) {
-      if (deepLinkTried.current) return
-      deepLinkTried.current = true
+      const guardKey = `pirs-deeplink:${fromUrl}:${nick.toLowerCase()}`
+      if (sessionStorage.getItem(guardKey) === '1') return
+      sessionStorage.setItem(guardKey, '1')
       setName(nick)
       attemptJoin(fromUrl, nick)
       return
@@ -115,7 +130,7 @@ export default function HomePage() {
       if (fromUrl.length === 6) nameRef.current?.focus()
       else pinRef.current?.focus()
     })
-  }, [user?.displayName, attemptJoin])
+  }, [user?.displayName, attemptJoin, session, navigate, clearPinFromUrl])
 
   async function onHost(quizId) {
     const gamePin = await hostGame(quizId)

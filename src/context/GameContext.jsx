@@ -113,9 +113,21 @@ export function GameProvider({ children }) {
       if (current.status !== 'lobby') return { ok: false, error: 'started' }
       const trimmed = name.trim().slice(0, 16)
       if (!trimmed) return { ok: false, error: 'name' }
-      if (current.players.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
+
+      const resume = (player) => {
+        setSession({ role: 'player', pin: clean, playerId: player.id, name: player.name })
+        return { ok: true, pin: clean, rejoined: true }
+      }
+
+      // Refresh / StrictMode / deep-link: resume instead of duplicating
+      const byUser = user?.id ? current.players.find((p) => p.userId === user.id) : null
+      if (byUser) return resume(byUser)
+      const byName = current.players.find((p) => p.name.toLowerCase() === trimmed.toLowerCase())
+      if (byName) {
+        if (!byName.userId || byName.userId === user?.id) return resume(byName)
         return { ok: false, error: 'taken' }
       }
+
       const playerId = makeId()
       const player = {
         id: playerId,
@@ -123,11 +135,37 @@ export function GameProvider({ children }) {
         score: 0,
         userId: user?.id || null,
       }
-      await updateRoom(clean, (r) => ({ ...r, players: [...r.players, player] }))
-      setSession({ role: 'player', pin: clean, playerId, name: trimmed })
-      return { ok: true, pin: clean }
+
+      let outcome = { ok: true, pin: clean, playerId }
+      await updateRoom(clean, (r) => {
+        if (r.status !== 'lobby') {
+          outcome = { ok: false, error: 'started' }
+          return r
+        }
+        const seated =
+          (user?.id && r.players.find((p) => p.userId === user.id)) ||
+          r.players.find((p) => p.name.toLowerCase() === trimmed.toLowerCase())
+        if (seated) {
+          if (seated.userId && user?.id && seated.userId !== user.id) {
+            outcome = { ok: false, error: 'taken' }
+            return r
+          }
+          outcome = { ok: true, pin: clean, playerId: seated.id, rejoined: true, name: seated.name }
+          return r
+        }
+        return { ...r, players: [...r.players, player] }
+      })
+
+      if (!outcome.ok) return outcome
+      setSession({
+        role: 'player',
+        pin: clean,
+        playerId: outcome.playerId,
+        name: outcome.name || trimmed,
+      })
+      return { ok: true, pin: clean, rejoined: Boolean(outcome.rejoined) }
     },
-    [updateRoom, user?.id],
+    [updateRoom, user],
   )
 
   const startQuestion = useCallback(() => {
