@@ -1,14 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
 import { useGame } from '../context/GameContext'
-import { localize, toEasternDigits } from '../utils/format'
+import { joinUrlForPin, localize, toEasternDigits } from '../utils/format'
 import LangSwitch from '../components/LangSwitch'
 
 export default function LobbyPage() {
   const { t, locale } = useLocale()
   const { session, room, startQuestion, leaveGame } = useGame()
   const navigate = useNavigate()
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!room) return
@@ -24,6 +25,18 @@ export default function LobbyPage() {
 
   const isHost = session.role === 'host'
   const title = localize(room.quiz.title, locale)
+
+  async function copyJoinLink() {
+    const url = joinUrlForPin(room.pin)
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Fallback: select via prompt for older browsers
+      window.prompt(t.copyJoinLink, url)
+    }
+  }
 
   return (
     <div className="lobby-screen">
@@ -48,6 +61,11 @@ export default function LobbyPage() {
         <div className="pin-board">
           <span>{t.gamePin}</span>
           <strong className="pin-digits">{toEasternDigits(room.pin, locale)}</strong>
+          {isHost && (
+            <button type="button" className="btn btn-join copy-link-btn" onClick={copyJoinLink}>
+              {copied ? t.linkCopied : t.copyJoinLink}
+            </button>
+          )}
         </div>
 
         <div className="players-board">

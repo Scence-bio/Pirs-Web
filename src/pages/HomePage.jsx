@@ -1,25 +1,30 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
 import { useAuth } from '../context/AuthContext'
 import { useGame } from '../context/GameContext'
 import { QUIZZES } from '../data/quizzes'
 import { listUserQuizzes, removeUserQuiz } from '../lib/quizStore'
-import { localize, toEasternDigits } from '../utils/format'
+import { localize, normalizeDigits, toEasternDigits } from '../utils/format'
 import LangSwitch from '../components/LangSwitch'
 import ProfileMenu from '../components/ProfileMenu'
 
 export default function HomePage() {
   const { t, locale } = useLocale()
   const { user } = useAuth()
-  const { hostGame, joinGame } = useGame()
+  const { joinGame, hostGame } = useGame()
   const navigate = useNavigate()
   const [mode, setMode] = useState(null)
   const [pin, setPin] = useState('')
   const [name, setName] = useState(() => localStorage.getItem('pirs-nick') || '')
   const [error, setError] = useState('')
+  const [joining, setJoining] = useState(false)
   const [myQuizzes, setMyQuizzes] = useState([])
   const [loadingQuizzes, setLoadingQuizzes] = useState(false)
+  const pinRef = useRef(null)
+  const nameRef = useRef(null)
+  const joinLock = useRef(false)
+  const deepLinkTried = useRef(false)
 
   const refreshQuizzes = useCallback(async () => {
     if (!user) {
@@ -41,16 +46,76 @@ export default function HomePage() {
   }, [refreshQuizzes])
 
   useEffect(() => {
+    if (user?.displayName && !localStorage.getItem('pirs-nick')) {
+      setName(user.displayName)
+    }
+  }, [user])
+
+  const clearPinFromUrl = useCallback(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('pin')) return
+    url.searchParams.delete('pin')
+    const next = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : '') + url.hash
+    window.history.replaceState({}, '', next)
+  }, [])
+
+  const attemptJoin = useCallback(
+    async (pinValue, nameValue) => {
+      const cleanPin = normalizeDigits(pinValue)
+      const trimmed = String(nameValue || '').trim().slice(0, 16)
+      if (cleanPin.length < 6 || !trimmed || joinLock.current) return false
+      joinLock.current = true
+      setJoining(true)
+      setError('')
+      localStorage.setItem('pirs-nick', trimmed)
+      try {
+        const res = await joinGame(cleanPin, trimmed)
+        if (!res.ok) {
+          const map = {
+            not_found: t.errNotFound,
+            started: t.errStarted,
+            name: t.errName,
+            taken: t.errTaken,
+          }
+          setError(map[res.error] || t.errNotFound)
+          return false
+        }
+        clearPinFromUrl()
+        navigate('/lobby')
+        return true
+      } finally {
+        joinLock.current = false
+        setJoining(false)
+      }
+    },
+    [joinGame, navigate, t, clearPinFromUrl],
+  )
+
+  useEffect(() => {
     if (user && new URLSearchParams(window.location.search).get('host') === '1') {
       setMode('host')
     }
   }, [user])
 
+  // Prefill from ?pin=; auto-join once when nickname is available
   useEffect(() => {
-    if (user?.displayName && !localStorage.getItem('pirs-nick')) {
-      setName(user.displayName)
+    const fromUrl = normalizeDigits(new URLSearchParams(window.location.search).get('pin') || '')
+    if (!fromUrl) return
+    setPin(fromUrl)
+    setMode(null)
+    const nick = (localStorage.getItem('pirs-nick') || user?.displayName || '').trim()
+    if (fromUrl.length === 6 && nick) {
+      if (deepLinkTried.current) return
+      deepLinkTried.current = true
+      setName(nick)
+      attemptJoin(fromUrl, nick)
+      return
     }
-  }, [user])
+    requestAnimationFrame(() => {
+      if (fromUrl.length === 6) nameRef.current?.focus()
+      else pinRef.current?.focus()
+    })
+  }, [user?.displayName, attemptJoin])
 
   async function onHost(quizId) {
     const gamePin = await hostGame(quizId)
@@ -64,21 +129,40 @@ export default function HomePage() {
     refreshQuizzes()
   }
 
-  async function onJoin(e) {
+  function onJoinSubmit(e) {
     e.preventDefault()
-    localStorage.setItem('pirs-nick', name.trim())
-    const res = await joinGame(pin, name)
-    if (!res.ok) {
-      const map = {
-        not_found: t.errNotFound,
-        started: t.errStarted,
-        name: t.errName,
-        taken: t.errTaken,
+    attemptJoin(pin, name)
+  }
+
+  function onPinChange(raw) {
+    const next = normalizeDigits(raw)
+    setPin(next)
+    setError('')
+    if (next.length === 6) {
+      const nick = name.trim()
+      if (nick) {
+        attemptJoin(next, nick)
+      } else {
+        requestAnimationFrame(() => nameRef.current?.focus())
       }
-      setError(map[res.error] || t.errNotFound)
-      return
     }
-    navigate('/lobby')
+  }
+
+  function onPinPaste(e) {
+    const text = e.clipboardData?.getData('text') || ''
+    // Accept raw PIN or a full join URL containing ?pin=
+    let digits = normalizeDigits(text)
+    try {
+      if (text.includes('pin=')) {
+        const u = new URL(text.trim())
+        digits = normalizeDigits(u.searchParams.get('pin') || digits)
+      }
+    } catch {
+      /* plain text paste */
+    }
+    if (!digits) return
+    e.preventDefault()
+    onPinChange(digits)
   }
 
   function requireAuth(path) {
@@ -127,11 +211,68 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="home-hero">
-        <h1 className="home-brand">{t.brand}</h1>
+      {mode !== 'host' && (
+        <section className="home-hero">
+          <h1 className="home-brand">{t.brand}</h1>
+          <p className="join-hint">{t.joinHint}</p>
 
-        {!mode && (
-          <div className="home-cta">
+          <form className="join-hero" onSubmit={onJoinSubmit}>
+            <label className="join-pin-label" htmlFor="join-pin">
+              {t.enterPin}
+            </label>
+            <input
+              id="join-pin"
+              ref={pinRef}
+              className="join-pin-input"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              enterKeyHint="next"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => onPinChange(e.target.value)}
+              onPaste={onPinPaste}
+              placeholder={t.pinPlaceholder}
+              aria-invalid={Boolean(error)}
+              disabled={joining}
+              autoFocus
+            />
+
+            <label className="join-name-label" htmlFor="join-name">
+              {t.nickname}
+            </label>
+            <input
+              id="join-name"
+              ref={nameRef}
+              className="join-name-input"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                setError('')
+              }}
+              placeholder={t.nicknamePlaceholder}
+              maxLength={16}
+              autoComplete="nickname"
+              enterKeyHint="go"
+              disabled={joining}
+            />
+
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="btn btn-join join-submit"
+              disabled={joining || pin.length < 6 || !name.trim()}
+            >
+              {joining ? t.joining : t.join}
+            </button>
+          </form>
+
+          <div className="home-cta home-cta-secondary" role="group" aria-label={t.orHost}>
+            <p className="cta-divider">{t.orHost}</p>
             <button
               type="button"
               className="btn btn-host"
@@ -152,12 +293,9 @@ export default function HomePage() {
             >
               {t.createCta}
             </button>
-            <button type="button" className="btn btn-join" onClick={() => setMode('join')}>
-              {t.joinCta}
-            </button>
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {mode === 'host' && (
         <section className="panel quiz-pick">
@@ -189,49 +327,6 @@ export default function HomePage() {
 
           <h3 className="quiz-section-title">{t.readyQuizzes}</h3>
           <div className="quiz-grid">{QUIZZES.map((quiz) => renderQuizCard(quiz))}</div>
-        </section>
-      )}
-
-      {mode === 'join' && (
-        <section className="panel join-panel">
-          <div className="panel-head">
-            <h2>{t.joinCta}</h2>
-            <button type="button" className="linkish" onClick={() => setMode(null)}>
-              {t.backHome}
-            </button>
-          </div>
-          <form className="join-form" onSubmit={onJoin}>
-            <label>
-              {t.enterPin}
-              <input
-                inputMode="numeric"
-                maxLength={6}
-                value={pin}
-                onChange={(e) => {
-                  setPin(e.target.value.replace(/\D/g, '').slice(0, 6))
-                  setError('')
-                }}
-                placeholder={t.pinPlaceholder}
-                autoFocus
-              />
-            </label>
-            <label>
-              {t.nickname}
-              <input
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value)
-                  setError('')
-                }}
-                placeholder={t.nicknamePlaceholder}
-                maxLength={16}
-              />
-            </label>
-            {error && <p className="form-error">{error}</p>}
-            <button type="submit" className="btn btn-join" disabled={pin.length < 6}>
-              {t.join}
-            </button>
-          </form>
         </section>
       )}
     </div>
