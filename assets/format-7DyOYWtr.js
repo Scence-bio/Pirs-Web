@@ -1,1 +1,0 @@
-function e(e,t){return e?typeof e==`string`||Array.isArray(e)?e:e[t]||e.ckb||e.en||e.ar||``:``}function t(e,t){return t===`en`?String(e):String(e).replace(/\d/g,e=>`٠١٢٣٤٥٦٧٨٩`[Number(e)])}export{t as n,e as t};

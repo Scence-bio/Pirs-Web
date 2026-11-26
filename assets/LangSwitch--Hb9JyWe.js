@@ -1,0 +1,1 @@
+import{l as e}from"./index-CeDI7Afk.js";import{t}from"./react-Dk7picYx.js";var n=t();function r(){let{locale:t,setLocale:r,locales:i}=e();return(0,n.jsx)(`div`,{className:`lang-switch`,role:`group`,"aria-label":`Language`,children:i.map(e=>(0,n.jsx)(`button`,{type:`button`,className:t===e.code?`active`:``,onClick:()=>r(e.code),children:e.label},e.code))})}export{r as t};
