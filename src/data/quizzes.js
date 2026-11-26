@@ -48,7 +48,7 @@ export const QUIZZES = [
       },
       {
         text: {
-          ckb: 'لە JavaScriptدا، کام جۆر داتا بۆ ڕاست/هەڵە بەکاردێت؟',
+          ckb: 'لە JavaScriptدا، کام جۆری داتا بۆ ڕاست/هەڵە بەکاردێت؟',
           ar: 'في JavaScript، أي نوع بيانات للمنطق صح/خطأ؟',
           en: 'In JavaScript, which type holds true/false?',
         },
@@ -142,7 +142,7 @@ export const QUIZZES = [
       },
       {
         text: {
-          ckb: 'ڕوەک خانەی سبز (کلۆرۆپلاست)ی هەیە بۆ…',
+          ckb: 'ڕوەک خانەی سەوز (کلۆرۆپلاست)ی هەیە بۆ…',
           ar: 'تمتلك النباتات بلاستيدات خضر لـ…',
           en: 'Plants have chloroplasts for…',
         },
