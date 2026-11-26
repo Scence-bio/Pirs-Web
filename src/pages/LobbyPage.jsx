@@ -3,11 +3,12 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
 import { useGame } from '../context/GameContext'
 import { joinUrlForPin, localize, toEasternDigits } from '../utils/format'
+import { unlockAudio } from '../lib/sound'
 import LangSwitch from '../components/LangSwitch'
 
 export default function LobbyPage() {
   const { t, locale } = useLocale()
-  const { session, room, startQuestion, leaveGame } = useGame()
+  const { session, room, startQuestion, leaveGame, setSoundEnabled } = useGame()
   const navigate = useNavigate()
   const [copied, setCopied] = useState(false)
 
@@ -25,6 +26,7 @@ export default function LobbyPage() {
 
   const isHost = session.role === 'host'
   const title = localize(room.quiz.title, locale)
+  const soundOn = room.soundEnabled !== false
 
   async function copyJoinLink() {
     const url = joinUrlForPin(room.pin)
@@ -33,7 +35,6 @@ export default function LobbyPage() {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
     } catch {
-      // Fallback: select via prompt for older browsers
       window.prompt(t.copyJoinLink, url)
     }
   }
@@ -68,6 +69,23 @@ export default function LobbyPage() {
           )}
         </div>
 
+        {isHost && (
+          <button
+            type="button"
+            className={`sound-chip ${soundOn ? 'on' : 'off'}`}
+            onClick={() => {
+              unlockAudio()
+              setSoundEnabled(!soundOn)
+            }}
+            aria-pressed={soundOn}
+          >
+            <span className="sound-glyph" aria-hidden="true">
+              {soundOn ? '♪' : '✕'}
+            </span>
+            {soundOn ? t.soundOn : t.soundOff}
+          </button>
+        )}
+
         <div className="players-board">
           <h2>
             {t.players} ({toEasternDigits(room.players.length, locale)})
@@ -91,6 +109,7 @@ export default function LobbyPage() {
             className="btn btn-host"
             disabled={room.players.length < 1}
             onClick={() => {
+              unlockAudio()
               startQuestion()
               navigate('/host')
             }}

@@ -35,7 +35,7 @@ export function findQuiz(id) {
 }
 
 /** Build a quiz object from the create form (single language → all locales). */
-export function buildQuizFromForm({ title, description, timeLimit, questions }) {
+export function buildQuizFromForm({ title, description, timeLimit, questions, soundEnabled = true }) {
   const id = `custom-${Date.now().toString(36)}`
   const t = title.trim()
   const d = (description || '').trim()
@@ -49,6 +49,7 @@ export function buildQuizFromForm({ title, description, timeLimit, questions }) 
       en: d || t,
     },
     timeLimit: Number(timeLimit) || 20,
+    soundEnabled: soundEnabled !== false,
     questions: questions.map((q) => {
       const text = q.text.trim()
       const options = q.options.map((o) => o.trim())

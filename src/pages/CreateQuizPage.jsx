@@ -8,6 +8,7 @@ import { buildQuizFromForm } from '../data/customQuizzes'
 import { saveUserQuiz } from '../lib/quizStore'
 import { toEasternDigits } from '../utils/format'
 import LangSwitch from '../components/LangSwitch'
+import MakerIcon from '../components/MakerIcon'
 import ProfileMenu from '../components/ProfileMenu'
 
 function emptyQuestion() {
@@ -23,6 +24,7 @@ export default function CreateQuizPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [timeLimit, setTimeLimit] = useState(20)
+  const [soundEnabled, setSoundEnabled] = useState(true)
   const [questions, setQuestions] = useState([emptyQuestion(), emptyQuestion()])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -74,7 +76,7 @@ export default function CreateQuizPage() {
       return null
     }
     setError('')
-    const quiz = buildQuizFromForm({ title, description, timeLimit, questions })
+    const quiz = buildQuizFromForm({ title, description, timeLimit, questions, soundEnabled })
     await saveUserQuiz(user, quiz)
     return quiz
   }
@@ -117,6 +119,7 @@ export default function CreateQuizPage() {
         </Link>
         <div className="home-header-actions">
           <LangSwitch />
+          <MakerIcon />
           <ProfileMenu />
         </div>
       </header>
@@ -167,6 +170,15 @@ export default function CreateQuizPage() {
               </strong>
             </div>
           </label>
+          <label className="sound-toggle-label">
+            <input
+              type="checkbox"
+              checked={soundEnabled}
+              onChange={(e) => setSoundEnabled(e.target.checked)}
+            />
+            <span>{t.soundEnabled}</span>
+          </label>
+          <p className="correct-hint">{t.soundHint}</p>
         </section>
 
         {questions.map((q, qi) => (

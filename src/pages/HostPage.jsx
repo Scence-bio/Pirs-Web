@@ -1,8 +1,9 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
 import { useGame } from '../context/GameContext'
 import { localize, toEasternDigits } from '../utils/format'
+import { playQuestionStart, unlockAudio } from '../lib/sound'
 import AnswerGrid from '../components/AnswerGrid'
 import TimerRing from '../components/TimerRing'
 import Leaderboard from '../components/Leaderboard'
@@ -16,14 +17,25 @@ export default function HostPage() {
     revealAnswers,
     showLeaderboard,
     nextQuestion,
+    setSoundEnabled,
   } = useGame()
   const navigate = useNavigate()
+  const lastStartRef = useRef(null)
 
   useEffect(() => {
     if (!room) return
     if (room.status === 'lobby') navigate('/lobby', { replace: true })
     if (room.status === 'finished') navigate('/results', { replace: true })
   }, [room, navigate])
+
+  useEffect(() => {
+    if (!room || room.status !== 'question' || !room.questionStartedAt) return
+    if (lastStartRef.current === room.questionStartedAt) return
+    lastStartRef.current = room.questionStartedAt
+    if (room.soundEnabled !== false) {
+      unlockAudio().then(() => playQuestionStart())
+    }
+  }, [room?.status, room?.questionStartedAt, room?.soundEnabled])
 
   const onExpire = useCallback(() => {
     if (room?.status === 'question') revealAnswers()
@@ -37,6 +49,7 @@ export default function HostPage() {
   const total = room.quiz.questions.length
   const qi = room.questionIndex
   const isLast = qi >= total - 1
+  const soundOn = room.soundEnabled !== false
 
   return (
     <div className="host-screen">
@@ -52,6 +65,21 @@ export default function HostPage() {
           {toEasternDigits(answerCount, locale)}/{toEasternDigits(room.players.length, locale)}{' '}
           {t.answered}
         </span>
+        <button
+          type="button"
+          className={`sound-chip compact ${soundOn ? 'on' : 'off'}`}
+          onClick={() => {
+            unlockAudio()
+            setSoundEnabled(!soundOn)
+          }}
+          aria-pressed={soundOn}
+          title={soundOn ? t.soundOn : t.soundOff}
+          aria-label={soundOn ? t.soundOn : t.soundOff}
+        >
+          <span className="sound-glyph" aria-hidden="true">
+            {soundOn ? '♪' : '✕'}
+          </span>
+        </button>
       </header>
 
       {(room.status === 'question' || room.status === 'reveal') && (
@@ -61,6 +89,7 @@ export default function HostPage() {
               startedAt={room.questionStartedAt}
               timeLimit={room.quiz.timeLimit}
               onExpire={onExpire}
+              sound={soundOn}
             />
           )}
           <h1 className="question-text">{text}</h1>
@@ -94,6 +123,7 @@ export default function HostPage() {
               type="button"
               className="btn btn-host"
               onClick={() => {
+                unlockAudio()
                 nextQuestion()
                 if (isLast) navigate('/results')
               }}

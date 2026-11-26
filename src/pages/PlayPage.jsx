@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
 import { useGame } from '../context/GameContext'
 import { localize, toEasternDigits } from '../utils/format'
+import { playCorrect, playQuestionStart, playWrong, unlockAudio } from '../lib/sound'
 import AnswerGrid from '../components/AnswerGrid'
 import TimerRing from '../components/TimerRing'
 import Leaderboard from '../components/Leaderboard'
@@ -12,6 +13,8 @@ export default function PlayPage() {
   const { session, room, me, myAnswer, submitAnswer } = useGame()
   const navigate = useNavigate()
   const [feedback, setFeedback] = useState(null)
+  const lastStartRef = useRef(null)
+  const feedbackSoundRef = useRef(null)
 
   useEffect(() => {
     if (!room) return
@@ -21,12 +24,28 @@ export default function PlayPage() {
 
   useEffect(() => {
     setFeedback(null)
+    feedbackSoundRef.current = null
   }, [room?.questionIndex, room?.status])
+
+  useEffect(() => {
+    if (!room || room.status !== 'question' || !room.questionStartedAt) return
+    if (lastStartRef.current === room.questionStartedAt) return
+    lastStartRef.current = room.questionStartedAt
+    if (room.soundEnabled !== false) {
+      unlockAudio().then(() => playQuestionStart())
+    }
+  }, [room?.status, room?.questionStartedAt, room?.soundEnabled])
 
   useEffect(() => {
     if (room?.status !== 'reveal' || !myAnswer) return
     const q = room.quiz.questions[room.questionIndex]
-    setFeedback(myAnswer.choice === q.correct ? 'correct' : 'wrong')
+    const kind = myAnswer.choice === q.correct ? 'correct' : 'wrong'
+    setFeedback(kind)
+    if (room.soundEnabled !== false && feedbackSoundRef.current !== room.questionIndex) {
+      feedbackSoundRef.current = room.questionIndex
+      if (kind === 'correct') playCorrect()
+      else playWrong()
+    }
   }, [room, myAnswer])
 
   if (!session || session.role !== 'player' || !room) return <Navigate to="/" replace />
@@ -34,6 +53,7 @@ export default function PlayPage() {
   const q = room.quiz.questions[room.questionIndex]
   const options = localize(q.options, locale)
   const text = localize(q.text, locale)
+  const soundOn = room.soundEnabled !== false
 
   return (
     <div className="play-screen">
@@ -49,13 +69,20 @@ export default function PlayPage() {
 
       {room.status === 'question' && !myAnswer && (
         <div className="question-stage player-stage">
-          <TimerRing startedAt={room.questionStartedAt} timeLimit={room.quiz.timeLimit} />
+          <TimerRing
+            startedAt={room.questionStartedAt}
+            timeLimit={room.quiz.timeLimit}
+            sound={soundOn}
+          />
           <p className="pick-hint">{t.pickAnswer}</p>
           <h2 className="question-text sm">{text}</h2>
           <AnswerGrid
             options={options}
             selected={null}
-            onSelect={(i) => submitAnswer(i)}
+            onSelect={(i) => {
+              unlockAudio()
+              submitAnswer(i)
+            }}
           />
         </div>
       )}

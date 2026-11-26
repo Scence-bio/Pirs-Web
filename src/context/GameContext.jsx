@@ -96,6 +96,7 @@ export function GameProvider({ children }) {
         questionStartedAt: null,
         players: [],
         answers: {},
+        soundEnabled: quiz.soundEnabled !== false,
         createdAt: Date.now(),
       }
       await persistRoom(next)
@@ -166,6 +167,14 @@ export function GameProvider({ children }) {
       return { ok: true, pin: clean, rejoined: Boolean(outcome.rejoined) }
     },
     [updateRoom, user],
+  )
+
+  const setSoundEnabled = useCallback(
+    (enabled) => {
+      if (!session || session.role !== 'host') return
+      updateRoom(session.pin, { soundEnabled: Boolean(enabled) })
+    },
+    [session, updateRoom],
   )
 
   const startQuestion = useCallback(() => {
@@ -276,6 +285,7 @@ export function GameProvider({ children }) {
       answerCount,
       hostGame,
       joinGame,
+      setSoundEnabled,
       startQuestion,
       revealAnswers,
       showLeaderboard,
@@ -291,6 +301,7 @@ export function GameProvider({ children }) {
       answerCount,
       hostGame,
       joinGame,
+      setSoundEnabled,
       startQuestion,
       revealAnswers,
       showLeaderboard,

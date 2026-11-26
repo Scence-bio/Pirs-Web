@@ -7,6 +7,7 @@ import { QUIZZES } from '../data/quizzes'
 import { listUserQuizzes, removeUserQuiz } from '../lib/quizStore'
 import { localize, normalizeDigits, toEasternDigits } from '../utils/format'
 import LangSwitch from '../components/LangSwitch'
+import MakerIcon from '../components/MakerIcon'
 import ProfileMenu from '../components/ProfileMenu'
 
 export default function HomePage() {
@@ -222,6 +223,7 @@ export default function HomePage() {
         </div>
         <div className="home-header-actions">
           <LangSwitch />
+          <MakerIcon />
           <ProfileMenu />
         </div>
       </header>
