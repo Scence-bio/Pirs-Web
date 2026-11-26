@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { scoreAnswer } from '../data/quizzes'
 import { findQuiz } from '../data/customQuizzes'
 
@@ -6,6 +6,19 @@ const GameContext = createContext(null)
 const ROOM_PREFIX = 'pirs-room-'
 const SESSION_KEY = 'pirs-session'
 const CHANNEL = 'pirs-kahoot'
+
+let sharedChannel = null
+function getChannel() {
+  if (typeof BroadcastChannel === 'undefined') return null
+  if (!sharedChannel) {
+    try {
+      sharedChannel = new BroadcastChannel(CHANNEL)
+    } catch {
+      return null
+    }
+  }
+  return sharedChannel
+}
 
 function makePin() {
   return String(Math.floor(100000 + Math.random() * 900000))
@@ -25,14 +38,14 @@ function readRoom(pin) {
 }
 
 function writeRoom(room) {
-  localStorage.setItem(ROOM_PREFIX + room.pin, JSON.stringify(room))
+  const raw = JSON.stringify(room)
+  localStorage.setItem(ROOM_PREFIX + room.pin, raw)
   try {
-    const bc = new BroadcastChannel(CHANNEL)
-    bc.postMessage({ type: 'room', pin: room.pin })
-    bc.close()
+    getChannel()?.postMessage({ type: 'room', pin: room.pin, raw })
   } catch {
     /* ignore */
   }
+  return raw
 }
 
 function loadSession() {
@@ -51,12 +64,34 @@ function saveSession(session) {
 export function GameProvider({ children }) {
   const [session, setSession] = useState(loadSession)
   const [room, setRoom] = useState(() => (session?.pin ? readRoom(session.pin) : null))
+  const roomRawRef = useRef(room ? JSON.stringify(room) : '')
 
-  const refreshRoom = useCallback((pin) => {
-    const next = readRoom(pin)
-    setRoom(next)
-    return next
+  const applyRoomRaw = useCallback((raw) => {
+    if (!raw) {
+      if (roomRawRef.current) {
+        roomRawRef.current = ''
+        setRoom(null)
+      }
+      return null
+    }
+    if (raw === roomRawRef.current) return null
+    try {
+      const next = JSON.parse(raw)
+      roomRawRef.current = raw
+      setRoom(next)
+      return next
+    } catch {
+      return null
+    }
   }, [])
+
+  const refreshRoom = useCallback(
+    (pin) => {
+      const raw = localStorage.getItem(ROOM_PREFIX + pin)
+      return applyRoomRaw(raw)
+    },
+    [applyRoomRaw],
+  )
 
   useEffect(() => {
     saveSession(session)
@@ -64,40 +99,53 @@ export function GameProvider({ children }) {
 
   useEffect(() => {
     if (!session?.pin) return undefined
+    const pin = session.pin
 
     const onStorage = (e) => {
-      if (e.key === ROOM_PREFIX + session.pin) refreshRoom(session.pin)
+      if (e.key === ROOM_PREFIX + pin) applyRoomRaw(e.newValue)
     }
 
-    let bc
-    try {
-      bc = new BroadcastChannel(CHANNEL)
-      bc.onmessage = (ev) => {
-        if (ev.data?.pin === session.pin) refreshRoom(session.pin)
-      }
-    } catch {
-      /* ignore */
+    const channel = getChannel()
+    const onMessage = (ev) => {
+      if (ev.data?.pin !== pin) return
+      if (typeof ev.data.raw === 'string') applyRoomRaw(ev.data.raw)
+      else refreshRoom(pin)
     }
+    channel?.addEventListener('message', onMessage)
 
-    const poll = setInterval(() => refreshRoom(session.pin), 800)
+    let pollId = 0
+    const poll = () => {
+      if (document.visibilityState === 'hidden') return
+      refreshRoom(pin)
+    }
+    // Fallback sync for same-origin tabs that miss BroadcastChannel
+    pollId = window.setInterval(poll, 1500)
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshRoom(pin)
+    }
+    document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('storage', onStorage)
+
     return () => {
       window.removeEventListener('storage', onStorage)
-      clearInterval(poll)
-      bc?.close()
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(pollId)
+      channel?.removeEventListener('message', onMessage)
     }
-  }, [session?.pin, refreshRoom])
+  }, [session?.pin, refreshRoom, applyRoomRaw])
 
   const updateRoom = useCallback((pin, updater) => {
     const current = readRoom(pin)
     if (!current) return null
     const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater }
-    writeRoom(next)
+    const raw = writeRoom(next)
+    roomRawRef.current = raw
     setRoom(next)
     return next
   }, [])
 
-  function hostGame(quizId, quizOverride = null) {
+  const hostGame = useCallback((quizId, quizOverride = null) => {
     const quiz = quizOverride || findQuiz(quizId)
     if (!quiz) return null
     const pin = makePin()
@@ -114,30 +162,34 @@ export function GameProvider({ children }) {
       answers: {},
       createdAt: Date.now(),
     }
-    writeRoom(next)
+    const raw = writeRoom(next)
+    roomRawRef.current = raw
     setRoom(next)
     setSession({ role: 'host', pin, playerId: hostId, name: 'Host' })
     return pin
-  }
+  }, [])
 
-  function joinGame(pin, name) {
-    const clean = String(pin).trim()
-    const current = readRoom(clean)
-    if (!current) return { ok: false, error: 'not_found' }
-    if (current.status !== 'lobby') return { ok: false, error: 'started' }
-    const trimmed = name.trim().slice(0, 16)
-    if (!trimmed) return { ok: false, error: 'name' }
-    if (current.players.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
-      return { ok: false, error: 'taken' }
-    }
-    const playerId = makeId()
-    const player = { id: playerId, name: trimmed, score: 0 }
-    updateRoom(clean, (r) => ({ ...r, players: [...r.players, player] }))
-    setSession({ role: 'player', pin: clean, playerId, name: trimmed })
-    return { ok: true, pin: clean }
-  }
+  const joinGame = useCallback(
+    (pin, name) => {
+      const clean = String(pin).trim()
+      const current = readRoom(clean)
+      if (!current) return { ok: false, error: 'not_found' }
+      if (current.status !== 'lobby') return { ok: false, error: 'started' }
+      const trimmed = name.trim().slice(0, 16)
+      if (!trimmed) return { ok: false, error: 'name' }
+      if (current.players.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
+        return { ok: false, error: 'taken' }
+      }
+      const playerId = makeId()
+      const player = { id: playerId, name: trimmed, score: 0 }
+      updateRoom(clean, (r) => ({ ...r, players: [...r.players, player] }))
+      setSession({ role: 'player', pin: clean, playerId, name: trimmed })
+      return { ok: true, pin: clean }
+    },
+    [updateRoom],
+  )
 
-  function startQuestion() {
+  const startQuestion = useCallback(() => {
     if (!session || session.role !== 'host') return
     updateRoom(session.pin, (r) => ({
       ...r,
@@ -145,9 +197,9 @@ export function GameProvider({ children }) {
       questionStartedAt: Date.now(),
       answers: { ...r.answers, [r.questionIndex]: r.answers[r.questionIndex] || {} },
     }))
-  }
+  }, [session, updateRoom])
 
-  function revealAnswers() {
+  const revealAnswers = useCallback(() => {
     if (!session || session.role !== 'host') return
     updateRoom(session.pin, (r) => {
       const q = r.quiz.questions[r.questionIndex]
@@ -160,14 +212,14 @@ export function GameProvider({ children }) {
       })
       return { ...r, status: 'reveal', players }
     })
-  }
+  }, [session, updateRoom])
 
-  function showLeaderboard() {
+  const showLeaderboard = useCallback(() => {
     if (!session || session.role !== 'host') return
     updateRoom(session.pin, { status: 'leaderboard' })
-  }
+  }, [session, updateRoom])
 
-  function nextQuestion() {
+  const nextQuestion = useCallback(() => {
     if (!session || session.role !== 'host') return
     updateRoom(session.pin, (r) => {
       const nextIndex = r.questionIndex + 1
@@ -182,37 +234,41 @@ export function GameProvider({ children }) {
         answers: { ...r.answers, [nextIndex]: {} },
       }
     })
-  }
+  }, [session, updateRoom])
 
-  function submitAnswer(choice) {
-    if (!session || session.role !== 'player' || !room) return
-    if (room.status !== 'question') return
-    const qi = room.questionIndex
-    const already = room.answers?.[qi]?.[session.playerId]
-    if (already) return
-    const timeMs = Date.now() - (room.questionStartedAt || Date.now())
-    updateRoom(session.pin, (r) => ({
-      ...r,
-      answers: {
-        ...r.answers,
-        [qi]: {
-          ...(r.answers[qi] || {}),
-          [session.playerId]: { choice, timeMs },
+  const submitAnswer = useCallback(
+    (choice) => {
+      if (!session || session.role !== 'player' || !room) return
+      if (room.status !== 'question') return
+      const qi = room.questionIndex
+      const already = room.answers?.[qi]?.[session.playerId]
+      if (already) return
+      const timeMs = Date.now() - (room.questionStartedAt || Date.now())
+      updateRoom(session.pin, (r) => ({
+        ...r,
+        answers: {
+          ...r.answers,
+          [qi]: {
+            ...(r.answers[qi] || {}),
+            [session.playerId]: { choice, timeMs },
+          },
         },
-      },
-    }))
-  }
+      }))
+    },
+    [session, room, updateRoom],
+  )
 
-  function leaveGame() {
+  const leaveGame = useCallback(() => {
     if (session?.role === 'player' && session.pin) {
       updateRoom(session.pin, (r) => ({
         ...r,
         players: r.players.filter((p) => p.id !== session.playerId),
       }))
     }
+    roomRawRef.current = ''
     setSession(null)
     setRoom(null)
-  }
+  }, [session, updateRoom])
 
   const me = useMemo(() => {
     if (!session || !room) return null
@@ -230,22 +286,40 @@ export function GameProvider({ children }) {
     return Object.keys(room.answers?.[room.questionIndex] || {}).length
   }, [room])
 
-  const value = {
-    session,
-    room,
-    me,
-    myAnswer,
-    answerCount,
-    hostGame,
-    joinGame,
-    startQuestion,
-    revealAnswers,
-    showLeaderboard,
-    nextQuestion,
-    submitAnswer,
-    leaveGame,
-    refreshRoom,
-  }
+  const value = useMemo(
+    () => ({
+      session,
+      room,
+      me,
+      myAnswer,
+      answerCount,
+      hostGame,
+      joinGame,
+      startQuestion,
+      revealAnswers,
+      showLeaderboard,
+      nextQuestion,
+      submitAnswer,
+      leaveGame,
+      refreshRoom,
+    }),
+    [
+      session,
+      room,
+      me,
+      myAnswer,
+      answerCount,
+      hostGame,
+      joinGame,
+      startQuestion,
+      revealAnswers,
+      showLeaderboard,
+      nextQuestion,
+      submitAnswer,
+      leaveGame,
+      refreshRoom,
+    ],
+  )
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>
 }

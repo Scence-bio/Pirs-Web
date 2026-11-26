@@ -1,6 +1,7 @@
+import { memo } from 'react'
 import { ANSWER_SHAPES } from '../data/quizzes'
 
-export default function AnswerGrid({
+function AnswerGrid({
   options,
   selected,
   correct,
@@ -41,3 +42,5 @@ export default function AnswerGrid({
     </div>
   )
 }
+
+export default memo(AnswerGrid)
