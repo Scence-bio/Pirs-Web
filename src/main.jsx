@@ -1,16 +1,32 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import '@fontsource-variable/vazirmatn/wght.css'
 import './index.css'
 import App from './App.jsx'
-import { registerSW } from 'virtual:pwa-register'
+import { prefetchFirebase } from './lib/firebase'
 
-// Display font is non-critical — load after first paint
-import('@fontsource-variable/bricolage-grotesque/wght.css')
+function idle(fn, timeout = 2000) {
+  if (typeof window === 'undefined') return
+  if ('requestIdleCallback' in window) window.requestIdleCallback(fn, { timeout })
+  else window.setTimeout(fn, Math.min(timeout, 400))
+}
 
-registerSW({ immediate: true })
+// Paint first, then fonts / SW / Firebase warm-up
+idle(() => {
+  import('@fontsource-variable/vazirmatn/wght.css')
+  import('@fontsource-variable/bricolage-grotesque/wght.css')
+})
 
-createRoot(document.getElementById('root')).render(
+idle(() => {
+  import('virtual:pwa-register')
+    .then(({ registerSW }) => registerSW({ immediate: true }))
+    .catch(() => {})
+}, 3000)
+
+idle(() => prefetchFirebase(), 1500)
+
+const root = document.getElementById('root')
+root.replaceChildren()
+createRoot(root).render(
   <StrictMode>
     <App />
   </StrictMode>,

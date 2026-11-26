@@ -1,16 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import {
-  createUserWithEmailAndPassword,
-  getRedirectResult,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signInWithRedirect,
-  signOut as firebaseSignOut,
-  updateProfile,
-} from 'firebase/auth'
-import { auth, hasFirebase } from '../lib/firebase'
+import { getFirebase, hasFirebase } from '../lib/firebase'
 import {
   getLocalSession,
   localSignIn,
@@ -30,29 +19,78 @@ function mapFirebaseUser(u) {
   }
 }
 
+function needsAuthSoon() {
+  if (typeof window === 'undefined') return false
+  const path = window.location.pathname
+  return /\/(auth|create|lobby|host|play|results)(\/|$)/.test(path)
+}
+
+function whenIdle(fn, timeout = 2200) {
+  if (typeof window === 'undefined') return () => {}
+  if ('requestIdleCallback' in window) {
+    const id = window.requestIdleCallback(fn, { timeout })
+    return () => window.cancelIdleCallback?.(id)
+  }
+  const id = window.setTimeout(fn, Math.min(timeout, 500))
+  return () => window.clearTimeout(id)
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
+  // Local session paints instantly; Firebase hydrates after first paint
+  const [user, setUser] = useState(() => getLocalSession())
+  const [loading, setLoading] = useState(() => hasFirebase && needsAuthSoon())
 
   useEffect(() => {
     if (!hasFirebase) {
-      setUser(getLocalSession())
       setLoading(false)
       return undefined
     }
 
-    getRedirectResult(auth).catch(() => {})
+    let unsub = () => {}
+    let alive = true
+    let cancelIdle = () => {}
 
-    const unsub = onAuthStateChanged(auth, (next) => {
-      setUser(mapFirebaseUser(next) || getLocalSession())
+    const hydrate = async () => {
+      try {
+        const { auth } = await getFirebase()
+        const { getRedirectResult, onAuthStateChanged } = await import('firebase/auth')
+        if (!alive) return
+        getRedirectResult(auth).catch(() => {})
+        unsub = onAuthStateChanged(auth, (next) => {
+          if (!alive) return
+          setUser(mapFirebaseUser(next) || getLocalSession())
+          setLoading(false)
+        })
+      } catch {
+        if (alive) {
+          setUser(getLocalSession())
+          setLoading(false)
+        }
+      }
+    }
+
+    if (needsAuthSoon()) {
+      hydrate()
+    } else {
+      // Home / join: paint first; warm auth when the browser is idle
       setLoading(false)
-    })
-    return unsub
+      cancelIdle = whenIdle(() => {
+        if (alive) hydrate()
+      }, 2500)
+    }
+
+    return () => {
+      alive = false
+      cancelIdle()
+      unsub()
+    }
   }, [])
 
   const signUp = useCallback(async ({ email, password, displayName }) => {
     if (hasFirebase) {
       try {
+        const { auth } = await getFirebase()
+        const { createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth')
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password)
         const name = (displayName || email.split('@')[0]).trim().slice(0, 32)
         if (name) await updateProfile(cred.user, { displayName: name })
@@ -74,6 +112,8 @@ export function AuthProvider({ children }) {
   const signIn = useCallback(async ({ email, password }) => {
     if (hasFirebase) {
       try {
+        const { auth } = await getFirebase()
+        const { signInWithEmailAndPassword } = await import('firebase/auth')
         await signInWithEmailAndPassword(auth, email.trim(), password)
         return { ok: true }
       } catch {
@@ -87,6 +127,8 @@ export function AuthProvider({ children }) {
 
   const signInWithGoogle = useCallback(async () => {
     if (!hasFirebase) return { ok: false, error: 'no_cloud' }
+    const { auth } = await getFirebase()
+    const { GoogleAuthProvider, signInWithPopup, signInWithRedirect } = await import('firebase/auth')
     const provider = new GoogleAuthProvider()
     provider.setCustomParameters({ prompt: 'select_account' })
     try {
@@ -112,7 +154,15 @@ export function AuthProvider({ children }) {
   }, [])
 
   const signOut = useCallback(async () => {
-    if (hasFirebase) await firebaseSignOut(auth)
+    if (hasFirebase) {
+      try {
+        const { auth } = await getFirebase()
+        const { signOut: firebaseSignOut } = await import('firebase/auth')
+        await firebaseSignOut(auth)
+      } catch {
+        /* ignore */
+      }
+    }
     localSignOut()
     setUser(null)
   }, [])

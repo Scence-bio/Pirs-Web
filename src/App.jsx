@@ -3,8 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { LocaleProvider } from './i18n/LocaleContext'
 import { AuthProvider } from './context/AuthContext'
 import { GameProvider } from './context/GameContext'
+import HomePage from './pages/HomePage'
 
-const HomePage = lazy(() => import('./pages/HomePage'))
 const CreateQuizPage = lazy(() => import('./pages/CreateQuizPage'))
 const AuthPage = lazy(() => import('./pages/AuthPage'))
 const LobbyPage = lazy(() => import('./pages/LobbyPage'))

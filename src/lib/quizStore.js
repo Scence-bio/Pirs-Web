@@ -1,15 +1,6 @@
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  query,
-  setDoc,
-  where,
-} from 'firebase/firestore'
 import { QUIZZES } from '../data/quizzes'
 import { loadCustomQuizzes, saveCustomQuizzes } from '../data/customQuizzes'
-import { db, hasFirebase } from './firebase'
+import { getFirebase, hasFirebase } from './firebase'
 
 function localKey(userId) {
   return `pirs-quizzes-${userId}`
@@ -43,6 +34,7 @@ function docToQuiz(id, data) {
     title: data.title,
     description: data.description || { ckb: '', ar: '', en: '' },
     timeLimit: data.timeLimit || 20,
+    soundEnabled: data.soundEnabled !== false,
     questions: data.questions || [],
     updatedAt: data.updatedAt || 0,
   }
@@ -51,6 +43,8 @@ function docToQuiz(id, data) {
 export async function listUserQuizzes(user) {
   if (!user) return []
   if (hasFirebase && user.provider === 'firebase') {
+    const { db } = await getFirebase()
+    const { collection, getDocs, query, where } = await import('firebase/firestore')
     const q = query(collection(db, 'quizzes'), where('ownerId', '==', user.id))
     const snap = await getDocs(q)
     return snap.docs
@@ -63,6 +57,8 @@ export async function listUserQuizzes(user) {
 export async function saveUserQuiz(user, quiz) {
   if (!user) throw new Error('auth_required')
   if (hasFirebase && user.provider === 'firebase') {
+    const { db } = await getFirebase()
+    const { doc, setDoc } = await import('firebase/firestore')
     const now = Date.now()
     await setDoc(
       doc(db, 'quizzes', quiz.id),
@@ -71,6 +67,7 @@ export async function saveUserQuiz(user, quiz) {
         title: quiz.title,
         description: quiz.description,
         timeLimit: quiz.timeLimit,
+        soundEnabled: quiz.soundEnabled !== false,
         questions: quiz.questions,
         updatedAt: now,
         ...(quiz.createdAt ? {} : { createdAt: now }),
@@ -88,6 +85,8 @@ export async function saveUserQuiz(user, quiz) {
 export async function removeUserQuiz(user, id) {
   if (!user) throw new Error('auth_required')
   if (hasFirebase && user.provider === 'firebase') {
+    const { db } = await getFirebase()
+    const { doc, deleteDoc } = await import('firebase/firestore')
     await deleteDoc(doc(db, 'quizzes', id))
     return
   }

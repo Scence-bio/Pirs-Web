@@ -1,5 +1,4 @@
-import { doc, getDoc, onSnapshot, runTransaction, setDoc } from 'firebase/firestore'
-import { db, hasFirebase } from './firebase'
+import { hasFirebase, getFirebase } from './firebase'
 
 const ROOM_PREFIX = 'pirs-room-'
 const CHANNEL = 'pirs-kahoot'
@@ -39,8 +38,14 @@ export function writeLocalRoom(room) {
 
 export async function readRoom(pin) {
   if (hasFirebase) {
-    const snap = await getDoc(doc(db, 'rooms', pin))
-    if (snap.exists()) return snap.data().payload || null
+    try {
+      const { db } = await getFirebase()
+      const { doc, getDoc } = await import('firebase/firestore')
+      const snap = await getDoc(doc(db, 'rooms', pin))
+      if (snap.exists()) return snap.data().payload || null
+    } catch (err) {
+      console.warn('[rooms read]', err.message)
+    }
   }
   return readLocalRoom(pin)
 }
@@ -50,6 +55,8 @@ export async function writeRoom(room, hostUserId = null) {
   const raw = writeLocalRoom(stamped)
   if (hasFirebase) {
     try {
+      const { db } = await getFirebase()
+      const { doc, setDoc } = await import('firebase/firestore')
       await setDoc(
         doc(db, 'rooms', stamped.pin),
         {
@@ -66,15 +73,12 @@ export async function writeRoom(room, hostUserId = null) {
   return raw
 }
 
-/**
- * Apply an updater with conflict protection.
- * Firebase: Firestore transaction (serializes concurrent joins/answers/reveals).
- * Local: single-tab safe; still best-effort across tabs via storage.
- */
 export async function updateRoomDoc(pin, updater, hostUserId = null) {
   if (hasFirebase) {
-    const ref = doc(db, 'rooms', pin)
     try {
+      const { db } = await getFirebase()
+      const { doc, runTransaction } = await import('firebase/firestore')
+      const ref = doc(db, 'rooms', pin)
       const result = await runTransaction(db, async (tx) => {
         const snap = await tx.get(ref)
         if (!snap.exists()) return null
@@ -98,7 +102,6 @@ export async function updateRoomDoc(pin, updater, hostUserId = null) {
       return result
     } catch (err) {
       console.warn('[rooms tx]', err.message)
-      // Fall through to non-transactional path
     }
   }
 
@@ -106,7 +109,6 @@ export async function updateRoomDoc(pin, updater, hostUserId = null) {
   if (!current) return null
   const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater }
   if (!next || next === current) return current
-  // Drop stale local writes that would rewind game status
   const remote = readLocalRoom(pin)
   if (remote && remote.updatedAt && current.updatedAt && remote.updatedAt > current.updatedAt) {
     const retry = typeof updater === 'function' ? updater(remote) : { ...remote, ...updater }
@@ -148,14 +150,26 @@ export function subscribeRoom(pin, onChange) {
   cleanups.push(() => channel?.removeEventListener('message', onMessage))
 
   if (hasFirebase) {
-    const unsub = onSnapshot(
-      doc(db, 'rooms', pin),
-      (snap) => {
-        if (snap.exists() && snap.data().payload) onChange(snap.data().payload)
-      },
-      (err) => console.warn('[rooms subscribe]', err.message),
-    )
-    cleanups.push(unsub)
+    let unsubFs = () => {}
+    let cancelled = false
+    getFirebase()
+      .then(async ({ db }) => {
+        if (cancelled) return
+        const { doc, onSnapshot } = await import('firebase/firestore')
+        if (cancelled) return
+        unsubFs = onSnapshot(
+          doc(db, 'rooms', pin),
+          (snap) => {
+            if (snap.exists() && snap.data().payload) onChange(snap.data().payload)
+          },
+          (err) => console.warn('[rooms subscribe]', err.message),
+        )
+      })
+      .catch((err) => console.warn('[rooms subscribe]', err.message))
+    cleanups.push(() => {
+      cancelled = true
+      unsubFs()
+    })
   } else {
     const pollId = window.setInterval(() => {
       if (document.visibilityState === 'hidden') return

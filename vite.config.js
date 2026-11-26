@@ -64,16 +64,47 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webmanifest}'],
+        // Precache shell + core UI; Firebase/fonts load on demand via runtime cache
+        globPatterns: ['**/*.{html,ico,png,svg,webmanifest,css,js}'],
+        globIgnores: [
+          '**/firebase-*.js',
+          '**/fonts-*.js',
+          '**/fonts-*.css',
+          '**/*vazirmatn*',
+          '**/*bricolage*',
+          '**/CreateQuizPage-*.js',
+          '**/AuthPage-*.js',
+          '**/LobbyPage-*.js',
+          '**/HostPage-*.js',
+          '**/PlayPage-*.js',
+          '**/ResultsPage-*.js',
+        ],
         navigateFallback: `${base}index.html`,
         navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
-            urlPattern: ({ request }) => request.destination === 'font',
+            urlPattern: ({ url }) => /\/assets\/firebase-.*\.js$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pirs-firebase',
+              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+          {
+            urlPattern: ({ request, url }) =>
+              request.destination === 'font' || /\.woff2?$/.test(url.pathname),
             handler: 'CacheFirst',
             options: {
               cacheName: 'pirs-fonts',
               expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+          {
+            urlPattern: ({ url }) => /\/assets\/.+\.js$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pirs-assets',
+              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 30 },
             },
           },
           {
@@ -96,6 +127,7 @@ export default defineConfig({
     target: 'es2020',
     cssCodeSplit: true,
     modulePreload: { polyfill: false },
+    cssMinify: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
