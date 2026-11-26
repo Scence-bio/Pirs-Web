@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { scoreAnswer } from '../data/quizzes'
 import { findQuiz } from '../lib/quizStore'
-import { readLocalRoom, readRoom, subscribeRoom, writeRoom } from '../lib/roomStore'
+import { readLocalRoom, readRoom, subscribeRoom, updateRoomDoc, writeRoom } from '../lib/roomStore'
 import { useAuth } from './AuthContext'
 
 const GameContext = createContext(null)
@@ -44,6 +44,13 @@ export function GameProvider({ children }) {
     }
     const raw = JSON.stringify(next)
     if (raw === roomRawRef.current) return
+    try {
+      const prev = roomRawRef.current ? JSON.parse(roomRawRef.current) : null
+      // Ignore stale snapshots that would rewind a newer local/tx write
+      if (prev?.updatedAt && next.updatedAt && next.updatedAt < prev.updatedAt) return
+    } catch {
+      /* ignore */
+    }
     roomRawRef.current = raw
     setRoom(next)
   }, [])
@@ -71,12 +78,13 @@ export function GameProvider({ children }) {
 
   const updateRoom = useCallback(
     async (pin, updater) => {
-      const current = (await readRoom(pin)) || readLocalRoom(pin)
-      if (!current) return null
-      const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater }
-      return persistRoom(next)
+      const next = await updateRoomDoc(pin, updater, user?.id || null)
+      if (!next) return null
+      roomRawRef.current = JSON.stringify(next)
+      setRoom(next)
+      return next
     },
-    [persistRoom],
+    [user?.id],
   )
 
   const hostGame = useCallback(
@@ -172,19 +180,27 @@ export function GameProvider({ children }) {
   const setSoundEnabled = useCallback(
     (enabled) => {
       if (!session || session.role !== 'host') return
-      updateRoom(session.pin, { soundEnabled: Boolean(enabled) })
+      updateRoom(session.pin, (r) => {
+        if (!r) return r
+        const next = Boolean(enabled)
+        if (r.soundEnabled === next) return r
+        return { ...r, soundEnabled: next }
+      })
     },
     [session, updateRoom],
   )
 
   const startQuestion = useCallback(() => {
     if (!session || session.role !== 'host') return
-    updateRoom(session.pin, (r) => ({
-      ...r,
-      status: 'question',
-      questionStartedAt: Date.now(),
-      answers: { ...r.answers, [r.questionIndex]: r.answers[r.questionIndex] || {} },
-    }))
+    updateRoom(session.pin, (r) => {
+      if (!r || r.status !== 'lobby') return r
+      return {
+        ...r,
+        status: 'question',
+        questionStartedAt: Date.now(),
+        answers: { ...r.answers, [r.questionIndex]: r.answers[r.questionIndex] || {} },
+      }
+    })
   }, [session, updateRoom])
 
   const revealAnswers = useCallback(() => {
@@ -205,12 +221,16 @@ export function GameProvider({ children }) {
 
   const showLeaderboard = useCallback(() => {
     if (!session || session.role !== 'host') return
-    updateRoom(session.pin, { status: 'leaderboard' })
+    updateRoom(session.pin, (r) => {
+      if (!r || r.status !== 'reveal') return r
+      return { ...r, status: 'leaderboard' }
+    })
   }, [session, updateRoom])
 
   const nextQuestion = useCallback(() => {
     if (!session || session.role !== 'host') return
     updateRoom(session.pin, (r) => {
+      if (!r || (r.status !== 'leaderboard' && r.status !== 'reveal')) return r
       const nextIndex = r.questionIndex + 1
       if (nextIndex >= r.quiz.questions.length) {
         return { ...r, status: 'finished' }
@@ -254,10 +274,13 @@ export function GameProvider({ children }) {
 
   const leaveGame = useCallback(() => {
     if (session?.role === 'player' && session.pin) {
-      updateRoom(session.pin, (r) => ({
-        ...r,
-        players: r.players.filter((p) => p.id !== session.playerId),
-      }))
+      const pin = session.pin
+      const playerId = session.playerId
+      updateRoom(pin, (r) => {
+        if (!r) return r
+        if (!r.players.some((p) => p.id === playerId)) return r
+        return { ...r, players: r.players.filter((p) => p.id !== playerId) }
+      })
     }
     roomRawRef.current = ''
     setSession(null)

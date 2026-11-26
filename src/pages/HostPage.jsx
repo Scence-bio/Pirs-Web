@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
 import { useGame } from '../context/GameContext'
@@ -21,6 +21,7 @@ export default function HostPage() {
   } = useGame()
   const navigate = useNavigate()
   const lastStartRef = useRef(null)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (!room) return
@@ -39,8 +40,10 @@ export default function HostPage() {
 
   const onExpire = useCallback(() => {
     // Always attempt reveal on timer end; updater no-ops if already revealed
-    revealAnswers()
-  }, [revealAnswers])
+    if (busy) return
+    setBusy(true)
+    Promise.resolve(revealAnswers()).finally(() => setBusy(false))
+  }, [revealAnswers, busy])
 
   if (!session || session.role !== 'host' || !room) return <Navigate to="/" replace />
 
@@ -103,12 +106,28 @@ export default function HostPage() {
           />
           <div className="host-actions">
             {room.status === 'question' && (
-              <button type="button" className="btn btn-host" onClick={revealAnswers}>
+              <button
+                type="button"
+                className="btn btn-host"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true)
+                  Promise.resolve(revealAnswers()).finally(() => setBusy(false))
+                }}
+              >
                 {t.reveal}
               </button>
             )}
             {room.status === 'reveal' && (
-              <button type="button" className="btn btn-join" onClick={showLeaderboard}>
+              <button
+                type="button"
+                className="btn btn-join"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true)
+                  Promise.resolve(showLeaderboard()).finally(() => setBusy(false))
+                }}
+              >
                 {t.leaderboard}
               </button>
             )}
@@ -123,10 +142,15 @@ export default function HostPage() {
             <button
               type="button"
               className="btn btn-host"
+              disabled={busy}
               onClick={() => {
                 unlockAudio()
-                nextQuestion()
-                if (isLast) navigate('/results')
+                setBusy(true)
+                Promise.resolve(nextQuestion())
+                  .then(() => {
+                    if (isLast) navigate('/results')
+                  })
+                  .finally(() => setBusy(false))
               }}
             >
               {isLast ? t.finish : t.next}

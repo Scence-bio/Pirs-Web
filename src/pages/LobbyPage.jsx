@@ -11,6 +11,7 @@ export default function LobbyPage() {
   const { session, room, startQuestion, leaveGame, setSoundEnabled } = useGame()
   const navigate = useNavigate()
   const [copied, setCopied] = useState(false)
+  const [starting, setStarting] = useState(false)
 
   useEffect(() => {
     if (!room) return
@@ -107,11 +108,14 @@ export default function LobbyPage() {
           <button
             type="button"
             className="btn btn-host"
-            disabled={room.players.length < 1}
+            disabled={room.players.length < 1 || starting}
             onClick={() => {
+              if (starting) return
+              setStarting(true)
               unlockAudio()
-              startQuestion()
-              navigate('/host')
+              Promise.resolve(startQuestion())
+                .then(() => navigate('/host'))
+                .finally(() => setStarting(false))
             }}
           >
             {room.players.length < 1 ? t.needPlayers : t.startGame}

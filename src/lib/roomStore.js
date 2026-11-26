@@ -1,4 +1,4 @@
-import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, runTransaction, setDoc } from 'firebase/firestore'
 import { db, hasFirebase } from './firebase'
 
 const ROOM_PREFIX = 'pirs-room-'
@@ -46,15 +46,16 @@ export async function readRoom(pin) {
 }
 
 export async function writeRoom(room, hostUserId = null) {
-  const raw = writeLocalRoom(room)
+  const stamped = { ...room, updatedAt: room.updatedAt || Date.now() }
+  const raw = writeLocalRoom(stamped)
   if (hasFirebase) {
     try {
       await setDoc(
-        doc(db, 'rooms', room.pin),
+        doc(db, 'rooms', stamped.pin),
         {
-          hostId: hostUserId || room.hostUserId || null,
-          payload: room,
-          updatedAt: Date.now(),
+          hostId: hostUserId || stamped.hostUserId || null,
+          payload: stamped,
+          updatedAt: stamped.updatedAt,
         },
         { merge: true },
       )
@@ -63,6 +64,58 @@ export async function writeRoom(room, hostUserId = null) {
     }
   }
   return raw
+}
+
+/**
+ * Apply an updater with conflict protection.
+ * Firebase: Firestore transaction (serializes concurrent joins/answers/reveals).
+ * Local: single-tab safe; still best-effort across tabs via storage.
+ */
+export async function updateRoomDoc(pin, updater, hostUserId = null) {
+  if (hasFirebase) {
+    const ref = doc(db, 'rooms', pin)
+    try {
+      const result = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref)
+        if (!snap.exists()) return null
+        const current = snap.data().payload
+        if (!current) return null
+        const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater }
+        if (!next || next === current) return current
+        const stamped = { ...next, updatedAt: Date.now() }
+        tx.set(
+          ref,
+          {
+            hostId: hostUserId || stamped.hostUserId || null,
+            payload: stamped,
+            updatedAt: stamped.updatedAt,
+          },
+          { merge: true },
+        )
+        return stamped
+      })
+      if (result) writeLocalRoom(result)
+      return result
+    } catch (err) {
+      console.warn('[rooms tx]', err.message)
+      // Fall through to non-transactional path
+    }
+  }
+
+  const current = (await readRoom(pin)) || readLocalRoom(pin)
+  if (!current) return null
+  const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater }
+  if (!next || next === current) return current
+  // Drop stale local writes that would rewind game status
+  const remote = readLocalRoom(pin)
+  if (remote && remote.updatedAt && current.updatedAt && remote.updatedAt > current.updatedAt) {
+    const retry = typeof updater === 'function' ? updater(remote) : { ...remote, ...updater }
+    if (!retry || retry === remote) return remote
+    await writeRoom({ ...retry, updatedAt: Date.now() }, hostUserId)
+    return retry
+  }
+  await writeRoom({ ...next, updatedAt: Date.now() }, hostUserId)
+  return next
 }
 
 export function subscribeRoom(pin, onChange) {

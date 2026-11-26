@@ -30,6 +30,26 @@ export default function PlayPage() {
     feedbackSoundRef.current = null
   }, [room?.questionIndex, room?.questionStartedAt])
 
+  // If host already moved on, lock answers even before local timer fires
+  useEffect(() => {
+    if (!room) return
+    if (room.status === 'reveal' || room.status === 'leaderboard' || room.status === 'finished') {
+      setTimeUp(true)
+    }
+  }, [room?.status])
+
+  // Clock-based lock in case timer callback is late / tab throttled
+  useEffect(() => {
+    if (!room || room.status !== 'question' || !room.questionStartedAt) return undefined
+    const limitMs = (room.quiz?.timeLimit || 20) * 1000
+    const check = () => {
+      if (Date.now() - room.questionStartedAt >= limitMs) setTimeUp(true)
+    }
+    check()
+    const id = window.setInterval(check, 200)
+    return () => clearInterval(id)
+  }, [room?.status, room?.questionStartedAt, room?.quiz?.timeLimit])
+
   useEffect(() => {
     if (!room || room.status !== 'question' || !room.questionStartedAt) return
     if (lastStartRef.current === room.questionStartedAt) return
