@@ -38,8 +38,9 @@ export default function HostPage() {
   }, [room?.status, room?.questionStartedAt, room?.soundEnabled])
 
   const onExpire = useCallback(() => {
-    if (room?.status === 'question') revealAnswers()
-  }, [room?.status, revealAnswers])
+    // Always attempt reveal on timer end; updater no-ops if already revealed
+    revealAnswers()
+  }, [revealAnswers])
 
   if (!session || session.role !== 'host' || !room) return <Navigate to="/" replace />
 

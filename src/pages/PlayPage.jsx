@@ -13,6 +13,7 @@ export default function PlayPage() {
   const { session, room, me, myAnswer, submitAnswer } = useGame()
   const navigate = useNavigate()
   const [feedback, setFeedback] = useState(null)
+  const [timeUp, setTimeUp] = useState(false)
   const lastStartRef = useRef(null)
   const feedbackSoundRef = useRef(null)
 
@@ -22,10 +23,12 @@ export default function PlayPage() {
     if (room.status === 'finished') navigate('/results', { replace: true })
   }, [room, navigate])
 
+  // Reset per question only (not when status flips to reveal)
   useEffect(() => {
     setFeedback(null)
+    setTimeUp(false)
     feedbackSoundRef.current = null
-  }, [room?.questionIndex, room?.status])
+  }, [room?.questionIndex, room?.questionStartedAt])
 
   useEffect(() => {
     if (!room || room.status !== 'question' || !room.questionStartedAt) return
@@ -37,7 +40,11 @@ export default function PlayPage() {
   }, [room?.status, room?.questionStartedAt, room?.soundEnabled])
 
   useEffect(() => {
-    if (room?.status !== 'reveal' || !myAnswer) return
+    if (room?.status !== 'reveal') return
+    if (!myAnswer) {
+      setFeedback('timesUp')
+      return
+    }
     const q = room.quiz.questions[room.questionIndex]
     const kind = myAnswer.choice === q.correct ? 'correct' : 'wrong'
     setFeedback(kind)
@@ -46,7 +53,7 @@ export default function PlayPage() {
       if (kind === 'correct') playCorrect()
       else playWrong()
     }
-  }, [room, myAnswer])
+  }, [room?.status, room?.questionIndex, room?.soundEnabled, room?.quiz, myAnswer])
 
   if (!session || session.role !== 'player' || !room) return <Navigate to="/" replace />
 
@@ -54,6 +61,7 @@ export default function PlayPage() {
   const options = localize(q.options, locale)
   const text = localize(q.text, locale)
   const soundOn = room.soundEnabled !== false
+  const canAnswer = room.status === 'question' && !myAnswer && !timeUp
 
   return (
     <div className="play-screen">
@@ -67,12 +75,13 @@ export default function PlayPage() {
         </span>
       </header>
 
-      {room.status === 'question' && !myAnswer && (
+      {canAnswer && (
         <div className="question-stage player-stage">
           <TimerRing
             startedAt={room.questionStartedAt}
             timeLimit={room.quiz.timeLimit}
             sound={soundOn}
+            onExpire={() => setTimeUp(true)}
           />
           <p className="pick-hint">{t.pickAnswer}</p>
           <h2 className="question-text sm">{text}</h2>
@@ -80,6 +89,7 @@ export default function PlayPage() {
             options={options}
             selected={null}
             onSelect={(i) => {
+              if (timeUp) return
               unlockAudio()
               submitAnswer(i)
             }}
@@ -87,17 +97,21 @@ export default function PlayPage() {
         </div>
       )}
 
-      {room.status === 'question' && myAnswer && (
+      {room.status === 'question' && (myAnswer || timeUp) && (
         <div className="wait-stage">
           <div className="wait-blob" />
-          <p>{t.waitingReveal}</p>
+          <p>{timeUp && !myAnswer ? t.timesUp : t.waitingReveal}</p>
         </div>
       )}
 
       {room.status === 'reveal' && (
-        <div className={`reveal-stage ${feedback || ''}`}>
+        <div className={`reveal-stage ${feedback === 'correct' ? 'correct' : feedback === 'wrong' ? 'wrong' : ''}`}>
           <h2>
-            {feedback === 'correct' ? t.correct : feedback === 'wrong' ? t.wrong : t.timesUp}
+            {feedback === 'correct'
+              ? t.correct
+              : feedback === 'wrong'
+                ? t.wrong
+                : t.timesUp}
           </h2>
           <AnswerGrid
             options={options}

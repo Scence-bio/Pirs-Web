@@ -190,6 +190,7 @@ export function GameProvider({ children }) {
   const revealAnswers = useCallback(() => {
     if (!session || session.role !== 'host') return
     updateRoom(session.pin, (r) => {
+      if (!r || r.status !== 'question') return r
       const q = r.quiz.questions[r.questionIndex]
       const round = r.answers[r.questionIndex] || {}
       const players = r.players.map((p) => {
@@ -226,24 +227,29 @@ export function GameProvider({ children }) {
 
   const submitAnswer = useCallback(
     (choice) => {
-      if (!session || session.role !== 'player' || !room) return
-      if (room.status !== 'question') return
-      const qi = room.questionIndex
-      const already = room.answers?.[qi]?.[session.playerId]
-      if (already) return
-      const timeMs = Date.now() - (room.questionStartedAt || Date.now())
-      updateRoom(session.pin, (r) => ({
-        ...r,
-        answers: {
-          ...r.answers,
-          [qi]: {
-            ...(r.answers[qi] || {}),
-            [session.playerId]: { choice, timeMs },
+      if (!session || session.role !== 'player') return
+      // Validate inside updater so late/race taps after time-up are dropped
+      updateRoom(session.pin, (r) => {
+        if (!r || r.status !== 'question') return r
+        const qi = r.questionIndex
+        if (r.answers?.[qi]?.[session.playerId]) return r
+        const started = r.questionStartedAt || 0
+        const limitMs = (r.quiz?.timeLimit || 20) * 1000
+        const timeMs = Date.now() - started
+        if (!started || timeMs >= limitMs) return r
+        return {
+          ...r,
+          answers: {
+            ...r.answers,
+            [qi]: {
+              ...(r.answers[qi] || {}),
+              [session.playerId]: { choice, timeMs },
+            },
           },
-        },
-      }))
+        }
+      })
     },
-    [session, room, updateRoom],
+    [session, updateRoom],
   )
 
   const leaveGame = useCallback(() => {
