@@ -457,19 +457,48 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.14);
-  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: #fff;
+  color: var(--bg-deep);
   border-radius: 999px;
-  padding: 0.3rem 0.75rem 0.3rem 0.35rem;
+  padding: 0.28rem 0.85rem 0.28rem 0.3rem;
   cursor: pointer;
   font-weight: 800;
   font-size: 0.88rem;
-  min-height: 40px;
+  min-height: 42px;
+  max-width: min(14.5rem, 46vw);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.18);
 }
 
 .profile-trigger:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: #fff8e1;
+}
+
+.profile-trigger-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  min-width: 0;
+  line-height: 1.15;
+  text-align: start;
+}
+
+.profile-trigger-kicker {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #6b628f;
+  white-space: nowrap;
+}
+
+.profile-trigger-name {
+  font-size: 0.86rem;
+  font-weight: 900;
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-avatar {
@@ -514,6 +543,13 @@ a {
   margin-bottom: 0.55rem;
 }
 
+.profile-dropdown-kicker {
+  margin: 0 0 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #6b628f;
+}
+
 .profile-dropdown-head strong {
   display: block;
   font-size: 0.95rem;
@@ -524,6 +560,17 @@ a {
   font-size: 0.78rem;
   color: #5a5670;
   word-break: break-all;
+}
+
+.profile-ownership {
+  margin: 0 0 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(70, 23, 143, 0.08);
+  color: var(--bg-deep);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .profile-signout {
@@ -1358,12 +1405,18 @@ a {
     white-space: nowrap;
   }
 
-  .profile-trigger-label {
-    display: none;
+  .profile-trigger {
+    max-width: min(12.5rem, 52vw);
+    padding: 0.25rem 0.7rem 0.25rem 0.28rem;
   }
 
-  .profile-trigger {
-    padding: 0.3rem;
+  .profile-trigger-name {
+    max-width: 7.5rem;
+    font-size: 0.8rem;
+  }
+
+  .profile-trigger-kicker {
+    font-size: 0.6rem;
   }
 
   .home-hero {

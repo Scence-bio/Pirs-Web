@@ -42,6 +42,8 @@ export default function ProfileMenu() {
     )
   }
 
+  const display = (user.displayName || user.email || t.myProfile).trim()
+
   return (
     <div className="profile-menu" ref={rootRef}>
       <button
@@ -50,25 +52,32 @@ export default function ProfileMenu() {
         aria-expanded={open}
         aria-controls={menuId}
         aria-haspopup="menu"
+        aria-label={t.myProfile}
+        title={t.myProfile}
         onClick={() => setOpen((v) => !v)}
       >
         <span className="profile-avatar" aria-hidden="true">
-          {initialOf(user.displayName || user.email)}
+          {initialOf(display)}
         </span>
-        <span className="profile-trigger-label">{t.myProfile}</span>
+        <span className="profile-trigger-text">
+          <span className="profile-trigger-kicker">{t.myProfile}</span>
+          <span className="profile-trigger-name">{display}</span>
+        </span>
       </button>
 
       {open && (
         <div className="profile-dropdown" id={menuId} role="menu">
           <div className="profile-dropdown-head">
             <span className="profile-avatar lg" aria-hidden="true">
-              {initialOf(user.displayName || user.email)}
+              {initialOf(display)}
             </span>
             <div>
-              <strong>{user.displayName}</strong>
+              <p className="profile-dropdown-kicker">{t.myProfile}</p>
+              <strong>{display}</strong>
               {user.email && <p dir="ltr">{user.email}</p>}
             </div>
           </div>
+          <p className="profile-ownership">{t.profileMine}</p>
           <button
             type="button"
             role="menuitem"
