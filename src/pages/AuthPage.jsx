@@ -132,10 +132,6 @@ export default function AuthPage() {
           </button>
         </div>
 
-        <p className="auth-note">
-          {cloudEnabled ? t.authFirebaseNote : t.authLocalNote}
-        </p>
-
         {cloudEnabled && (
           <>
             <button

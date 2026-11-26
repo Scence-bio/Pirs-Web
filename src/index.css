@@ -38,9 +38,7 @@ body,
 
 body {
   margin: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(255, 193, 7, 0.18), transparent 55%),
-    linear-gradient(160deg, #5b21b6 0%, var(--bg) 45%, var(--bg-deep) 100%);
+  background-color: var(--bg);
   color: white;
   overflow-x: hidden;
 }
@@ -405,23 +403,101 @@ a {
   box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2);
 }
 
-.account-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.88rem;
-  font-weight: 700;
+.profile-menu {
+  position: relative;
 }
 
-.persist-note {
-  margin: 0 auto 1.25rem;
-  max-width: 32rem;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.92rem;
+.profile-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.14);
+  color: white;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem 0.3rem 0.35rem;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 0.88rem;
+  min-height: 40px;
+}
+
+.profile-trigger:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.profile-avatar {
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--bg-deep);
+  font-weight: 900;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.profile-avatar.lg {
+  width: 2.4rem;
+  height: 2.4rem;
+  font-size: 1rem;
+}
+
+.profile-dropdown {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 40;
+  width: min(18rem, calc(100vw - 2rem));
+  background: #fff;
+  color: var(--ink);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  padding: 0.75rem;
+  animation: pop 0.2s ease both;
+}
+
+.profile-dropdown-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.35rem 0.35rem 0.75rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  margin-bottom: 0.55rem;
+}
+
+.profile-dropdown-head strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.profile-dropdown-head p {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: #5a5670;
+  word-break: break-all;
+}
+
+.profile-signout {
+  width: 100%;
+  border: 0;
+  background: rgba(226, 27, 60, 0.1);
+  color: var(--red);
+  font-weight: 800;
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  cursor: pointer;
+  text-align: start;
+}
+
+.profile-signout:hover {
+  background: rgba(226, 27, 60, 0.16);
+}
+
+.profile-signin {
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2);
 }
 
 .auth-screen {
@@ -840,7 +916,7 @@ a {
   justify-content: center;
 }
 
-/* Answer grid — Kahoot shapes */
+/* Answer grid shapes */
 .answer-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1077,6 +1153,14 @@ a {
 
   .brand-name {
     font-size: 1.15rem;
+  }
+
+  .profile-trigger-label {
+    display: none;
+  }
+
+  .profile-trigger {
+    padding: 0.3rem;
   }
 
   .home-hero {

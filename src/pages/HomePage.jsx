@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
 import { useAuth } from '../context/AuthContext'
 import { useGame } from '../context/GameContext'
@@ -7,10 +7,11 @@ import { QUIZZES } from '../data/quizzes'
 import { listUserQuizzes, removeUserQuiz } from '../lib/quizStore'
 import { localize, toEasternDigits } from '../utils/format'
 import LangSwitch from '../components/LangSwitch'
+import ProfileMenu from '../components/ProfileMenu'
 
 export default function HomePage() {
   const { t, locale } = useLocale()
-  const { user, signOut, cloudEnabled } = useAuth()
+  const { user } = useAuth()
   const { hostGame, joinGame } = useGame()
   const navigate = useNavigate()
   const [mode, setMode] = useState(null)
@@ -122,32 +123,12 @@ export default function HomePage() {
         </div>
         <div className="home-header-actions">
           <LangSwitch />
-          {user ? (
-            <div className="account-chip">
-              <span title={user.email}>{user.displayName}</span>
-              <button type="button" className="linkish" onClick={() => signOut()}>
-                {t.signOut}
-              </button>
-            </div>
-          ) : (
-            <Link to="/auth" className="btn btn-join btn-sm">
-              {t.signIn}
-            </Link>
-          )}
+          <ProfileMenu />
         </div>
       </header>
 
       <section className="home-hero">
         <h1 className="home-brand">{t.brand}</h1>
-        <p className="home-tagline">{t.tagline}</p>
-        <p className="home-support">{t.heroSupport}</p>
-        <p className="persist-note">
-          {user
-            ? cloudEnabled
-              ? t.persistCloudOn
-              : t.persistLocalOn
-            : t.persistNeedAccount}
-        </p>
 
         {!mode && (
           <div className="home-cta">

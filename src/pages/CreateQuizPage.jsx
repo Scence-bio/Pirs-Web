@@ -8,6 +8,7 @@ import { buildQuizFromForm } from '../data/customQuizzes'
 import { saveUserQuiz } from '../lib/quizStore'
 import { toEasternDigits } from '../utils/format'
 import LangSwitch from '../components/LangSwitch'
+import ProfileMenu from '../components/ProfileMenu'
 
 function emptyQuestion() {
   return { text: '', options: ['', '', '', ''], correct: 0 }
@@ -114,7 +115,10 @@ export default function CreateQuizPage() {
           <span className="brand-mark">؟</span>
           <span className="brand-name">{t.brand}</span>
         </Link>
-        <LangSwitch />
+        <div className="home-header-actions">
+          <LangSwitch />
+          <ProfileMenu />
+        </div>
       </header>
 
       <div className="create-head">

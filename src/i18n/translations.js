@@ -7,8 +7,9 @@ export const locales = [
 export const translations = {
   ckb: {
     brand: 'پرس',
-    tagline: 'یاریی پرسیار — وەک Kahoot',
+    tagline: 'یاریی پرسیار',
     heroSupport: 'کویز دروست بکە، کۆد بدە بە هاوڕێکانت، و لە پێشبڕکێی خێرادا یاری بکەن.',
+    myProfile: 'پڕۆفایلی من',
     hostCta: 'دەستپێکردنی یاری',
     joinCta: 'چوونەژوورەوە',
     createCta: 'دروستکردنی کویز',
@@ -103,8 +104,9 @@ export const translations = {
   },
   ar: {
     brand: 'پرس',
-    tagline: 'لعبة أسئلة — مثل Kahoot',
+    tagline: 'لعبة أسئلة',
     heroSupport: 'أنشئ كويزاً، شارك الرمز مع أصدقائك، وتنافسوا بسرعة.',
+    myProfile: 'ملفي',
     hostCta: 'ابدأ لعبة',
     joinCta: 'انضم',
     createCta: 'إنشاء كويز',
@@ -199,8 +201,9 @@ export const translations = {
   },
   en: {
     brand: 'Pirs',
-    tagline: 'Quiz game — Kahoot style',
+    tagline: 'Quiz game',
     heroSupport: 'Pick a quiz, share the PIN with friends, and race for the top score.',
+    myProfile: 'My profile',
     hostCta: 'Host a game',
     joinCta: 'Join',
     createCta: 'Create quiz',
