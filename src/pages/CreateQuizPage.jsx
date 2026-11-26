@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
+import { useAuth } from '../context/AuthContext'
 import { useGame } from '../context/GameContext'
 import { ANSWER_SHAPES } from '../data/quizzes'
-import { addCustomQuiz, buildQuizFromForm } from '../data/customQuizzes'
+import { buildQuizFromForm } from '../data/customQuizzes'
+import { saveUserQuiz } from '../lib/quizStore'
 import { toEasternDigits } from '../utils/format'
 import LangSwitch from '../components/LangSwitch'
 
@@ -13,6 +15,7 @@ function emptyQuestion() {
 
 export default function CreateQuizPage() {
   const { t, locale } = useLocale()
+  const { user, loading } = useAuth()
   const { hostGame } = useGame()
   const navigate = useNavigate()
 
@@ -21,6 +24,11 @@ export default function CreateQuizPage() {
   const [timeLimit, setTimeLimit] = useState(20)
   const [questions, setQuestions] = useState([emptyQuestion(), emptyQuestion()])
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  if (!loading && !user) {
+    return <Navigate to="/auth?next=/create" replace />
+  }
 
   function updateQuestion(index, patch) {
     setQuestions((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)))
@@ -58,7 +66,7 @@ export default function CreateQuizPage() {
     return ''
   }
 
-  function persistQuiz() {
+  async function persistQuiz() {
     const msg = validate()
     if (msg) {
       setError(msg)
@@ -66,23 +74,37 @@ export default function CreateQuizPage() {
     }
     setError('')
     const quiz = buildQuizFromForm({ title, description, timeLimit, questions })
-    addCustomQuiz(quiz)
+    await saveUserQuiz(user, quiz)
     return quiz
   }
 
-  function onSave(e) {
+  async function onSave(e) {
     e.preventDefault()
-    const quiz = persistQuiz()
-    if (!quiz) return
-    navigate('/?created=1')
+    setBusy(true)
+    try {
+      const quiz = await persistQuiz()
+      if (!quiz) return
+      navigate('/')
+    } catch (err) {
+      setError(err.message || t.errSaveFailed)
+    } finally {
+      setBusy(false)
+    }
   }
 
-  function onSaveAndHost(e) {
+  async function onSaveAndHost(e) {
     e.preventDefault()
-    const quiz = persistQuiz()
-    if (!quiz) return
-    const pin = hostGame(quiz.id, quiz)
-    if (pin) navigate('/lobby')
+    setBusy(true)
+    try {
+      const quiz = await persistQuiz()
+      if (!quiz) return
+      const pin = await hostGame(quiz.id, quiz)
+      if (pin) navigate('/lobby')
+    } catch (err) {
+      setError(err.message || t.errSaveFailed)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -198,10 +220,10 @@ export default function CreateQuizPage() {
         {error && <p className="form-error">{error}</p>}
 
         <div className="create-actions">
-          <button type="button" className="btn btn-join" onClick={onSave}>
+          <button type="button" className="btn btn-join" onClick={onSave} disabled={busy}>
             {t.saveQuiz}
           </button>
-          <button type="submit" className="btn btn-host">
+          <button type="submit" className="btn btn-host" disabled={busy}>
             {t.saveAndHost}
           </button>
         </div>

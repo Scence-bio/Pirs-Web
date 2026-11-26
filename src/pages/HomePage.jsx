@@ -1,39 +1,72 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useLocale } from '../i18n/LocaleContext'
+import { useAuth } from '../context/AuthContext'
 import { useGame } from '../context/GameContext'
 import { QUIZZES } from '../data/quizzes'
-import { deleteCustomQuiz, loadCustomQuizzes } from '../data/customQuizzes'
+import { listUserQuizzes, removeUserQuiz } from '../lib/quizStore'
 import { localize, toEasternDigits } from '../utils/format'
 import LangSwitch from '../components/LangSwitch'
 
 export default function HomePage() {
   const { t, locale } = useLocale()
+  const { user, signOut, cloudEnabled } = useAuth()
   const { hostGame, joinGame } = useGame()
   const navigate = useNavigate()
   const [mode, setMode] = useState(null)
   const [pin, setPin] = useState('')
   const [name, setName] = useState(() => localStorage.getItem('pirs-nick') || '')
   const [error, setError] = useState('')
-  const [customTick, setCustomTick] = useState(0)
+  const [myQuizzes, setMyQuizzes] = useState([])
+  const [loadingQuizzes, setLoadingQuizzes] = useState(false)
 
-  const customQuizzes = useMemo(() => loadCustomQuizzes(), [customTick])
+  const refreshQuizzes = useCallback(async () => {
+    if (!user) {
+      setMyQuizzes([])
+      return
+    }
+    setLoadingQuizzes(true)
+    try {
+      setMyQuizzes(await listUserQuizzes(user))
+    } catch (err) {
+      console.warn(err)
+    } finally {
+      setLoadingQuizzes(false)
+    }
+  }, [user])
 
-  function onHost(quizId) {
-    const gamePin = hostGame(quizId)
+  useEffect(() => {
+    refreshQuizzes()
+  }, [refreshQuizzes])
+
+  useEffect(() => {
+    if (user && new URLSearchParams(window.location.search).get('host') === '1') {
+      setMode('host')
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (user?.displayName && !localStorage.getItem('pirs-nick')) {
+      setName(user.displayName)
+    }
+  }, [user])
+
+  async function onHost(quizId) {
+    const gamePin = await hostGame(quizId)
     if (gamePin) navigate('/lobby')
   }
 
-  function onDelete(e, id) {
+  async function onDelete(e, id) {
     e.stopPropagation()
-    deleteCustomQuiz(id)
-    setCustomTick((n) => n + 1)
+    if (!user) return
+    await removeUserQuiz(user, id)
+    refreshQuizzes()
   }
 
-  function onJoin(e) {
+  async function onJoin(e) {
     e.preventDefault()
     localStorage.setItem('pirs-nick', name.trim())
-    const res = joinGame(pin, name)
+    const res = await joinGame(pin, name)
     if (!res.ok) {
       const map = {
         not_found: t.errNotFound,
@@ -45,6 +78,14 @@ export default function HomePage() {
       return
     }
     navigate('/lobby')
+  }
+
+  function requireAuth(path) {
+    if (!user) {
+      navigate(`/auth?next=${encodeURIComponent(path)}`)
+      return false
+    }
+    return true
   }
 
   function renderQuizCard(quiz, { deletable } = {}) {
@@ -79,22 +120,57 @@ export default function HomePage() {
           <span className="brand-mark">؟</span>
           <span className="brand-name">{t.brand}</span>
         </div>
-        <LangSwitch />
+        <div className="home-header-actions">
+          <LangSwitch />
+          {user ? (
+            <div className="account-chip">
+              <span title={user.email}>{user.displayName}</span>
+              <button type="button" className="linkish" onClick={() => signOut()}>
+                {t.signOut}
+              </button>
+            </div>
+          ) : (
+            <Link to="/auth" className="btn btn-join btn-sm">
+              {t.signIn}
+            </Link>
+          )}
+        </div>
       </header>
 
       <section className="home-hero">
         <h1 className="home-brand">{t.brand}</h1>
         <p className="home-tagline">{t.tagline}</p>
         <p className="home-support">{t.heroSupport}</p>
+        <p className="persist-note">
+          {user
+            ? cloudEnabled
+              ? t.persistCloudOn
+              : t.persistLocalOn
+            : t.persistNeedAccount}
+        </p>
 
         {!mode && (
           <div className="home-cta">
-            <button type="button" className="btn btn-host" onClick={() => setMode('host')}>
+            <button
+              type="button"
+              className="btn btn-host"
+              onClick={() => {
+                if (!requireAuth('/?host=1')) return
+                setMode('host')
+              }}
+            >
               {t.hostCta}
             </button>
-            <Link to="/create" className="btn btn-create">
+            <button
+              type="button"
+              className="btn btn-create"
+              onClick={() => {
+                if (!requireAuth('/create')) return
+                navigate('/create')
+              }}
+            >
               {t.createCta}
-            </Link>
+            </button>
             <button type="button" className="btn btn-join" onClick={() => setMode('join')}>
               {t.joinCta}
             </button>
@@ -111,17 +187,23 @@ export default function HomePage() {
             </button>
           </div>
 
-          <Link to="/create" className="btn btn-create create-inline">
+          <button
+            type="button"
+            className="btn btn-create create-inline"
+            onClick={() => navigate('/create')}
+          >
             + {t.createCta}
-          </Link>
+          </button>
 
-          {customQuizzes.length > 0 && (
-            <>
-              <h3 className="quiz-section-title">{t.myQuizzes}</h3>
-              <div className="quiz-grid">
-                {customQuizzes.map((quiz) => renderQuizCard(quiz, { deletable: true }))}
-              </div>
-            </>
+          <h3 className="quiz-section-title">{t.myQuizzes}</h3>
+          {loadingQuizzes ? (
+            <p className="muted">{t.loading}</p>
+          ) : myQuizzes.length > 0 ? (
+            <div className="quiz-grid">
+              {myQuizzes.map((quiz) => renderQuizCard(quiz, { deletable: true }))}
+            </div>
+          ) : (
+            <p className="muted">{t.noMyQuizzes}</p>
           )}
 
           <h3 className="quiz-section-title">{t.readyQuizzes}</h3>
