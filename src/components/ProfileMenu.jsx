@@ -34,7 +34,10 @@ export default function ProfileMenu() {
   if (!user) {
     return (
       <Link to="/auth" className="btn btn-join btn-sm profile-signin">
-        {t.signIn}
+        <span className="profile-signin-full">{t.signIn}</span>
+        <span className="profile-signin-short" aria-hidden="true">
+          {t.signInShort}
+        </span>
       </Link>
     )
   }
