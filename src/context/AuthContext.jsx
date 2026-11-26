@@ -1,5 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { hasSupabase, supabase } from '../lib/supabase'
+import {
+  createUserWithEmailAndPassword,
+  getRedirectResult,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut as firebaseSignOut,
+  updateProfile,
+} from 'firebase/auth'
+import { auth, hasFirebase } from '../lib/firebase'
 import {
   getLocalSession,
   localSignIn,
@@ -9,76 +20,51 @@ import {
 
 const AuthContext = createContext(null)
 
+function mapFirebaseUser(u) {
+  if (!u) return null
+  return {
+    id: u.uid,
+    email: u.email,
+    displayName: u.displayName || u.email?.split('@')[0] || 'User',
+    provider: 'firebase',
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let alive = true
-
-    async function boot() {
-      if (hasSupabase) {
-        const { data } = await supabase.auth.getSession()
-        if (!alive) return
-        const session = data.session
-        if (session?.user) {
-          setUser({
-            id: session.user.id,
-            email: session.user.email,
-            displayName:
-              session.user.user_metadata?.display_name ||
-              session.user.email?.split('@')[0] ||
-              'User',
-            provider: 'supabase',
-          })
-        } else {
-          setUser(getLocalSession())
-        }
-        setLoading(false)
-        const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
-          if (!alive) return
-          if (next?.user) {
-            setUser({
-              id: next.user.id,
-              email: next.user.email,
-              displayName:
-                next.user.user_metadata?.display_name ||
-                next.user.email?.split('@')[0] ||
-                'User',
-              provider: 'supabase',
-            })
-          } else {
-            setUser(getLocalSession())
-          }
-        })
-        return () => sub.subscription.unsubscribe()
-      }
-
+    if (!hasFirebase) {
       setUser(getLocalSession())
       setLoading(false)
       return undefined
     }
 
-    const cleanupPromise = boot()
-    return () => {
-      alive = false
-      Promise.resolve(cleanupPromise).then((fn) => fn?.())
-    }
+    getRedirectResult(auth).catch(() => {})
+
+    const unsub = onAuthStateChanged(auth, (next) => {
+      setUser(mapFirebaseUser(next) || getLocalSession())
+      setLoading(false)
+    })
+    return unsub
   }, [])
 
   const signUp = useCallback(async ({ email, password, displayName }) => {
-    if (hasSupabase) {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: { data: { display_name: displayName?.trim() || '' } },
-      })
-      if (error) return { ok: false, error: error.message }
-      if (data.user && !data.session) {
-        // email confirmation may be required
-        return { ok: true, needsConfirm: true }
+    if (hasFirebase) {
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email.trim(), password)
+        const name = (displayName || email.split('@')[0]).trim().slice(0, 32)
+        if (name) await updateProfile(cred.user, { displayName: name })
+        setUser(mapFirebaseUser({ ...cred.user, displayName: name }))
+        return { ok: true }
+      } catch (err) {
+        if (err.code === 'auth/email-already-in-use') return { ok: false, error: 'exists' }
+        if (err.code === 'auth/weak-password' || err.code === 'auth/invalid-email') {
+          return { ok: false, error: 'invalid' }
+        }
+        return { ok: false, error: err.message || 'failed' }
       }
-      return { ok: true }
     }
     const res = await localSignUp({ email, password, displayName })
     if (res.ok && res.user) setUser(res.user)
@@ -86,21 +72,47 @@ export function AuthProvider({ children }) {
   }, [])
 
   const signIn = useCallback(async ({ email, password }) => {
-    if (hasSupabase) {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      })
-      if (error) return { ok: false, error: 'invalid_creds' }
-      return { ok: true }
+    if (hasFirebase) {
+      try {
+        await signInWithEmailAndPassword(auth, email.trim(), password)
+        return { ok: true }
+      } catch {
+        return { ok: false, error: 'invalid_creds' }
+      }
     }
     const res = await localSignIn({ email, password })
     if (res.ok) setUser(res.user)
     return res
   }, [])
 
+  const signInWithGoogle = useCallback(async () => {
+    if (!hasFirebase) return { ok: false, error: 'no_cloud' }
+    const provider = new GoogleAuthProvider()
+    provider.setCustomParameters({ prompt: 'select_account' })
+    try {
+      await signInWithPopup(auth, provider)
+      return { ok: true }
+    } catch (err) {
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        return { ok: false, error: 'cancelled' }
+      }
+      if (
+        err.code === 'auth/popup-blocked' ||
+        err.code === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        try {
+          await signInWithRedirect(auth, provider)
+          return { ok: true, redirecting: true }
+        } catch (redirectErr) {
+          return { ok: false, error: redirectErr.message || 'failed' }
+        }
+      }
+      return { ok: false, error: err.message || 'failed' }
+    }
+  }, [])
+
   const signOut = useCallback(async () => {
-    if (hasSupabase) await supabase.auth.signOut()
+    if (hasFirebase) await firebaseSignOut(auth)
     localSignOut()
     setUser(null)
   }, [])
@@ -109,13 +121,14 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       loading,
-      isConfigured: hasSupabase,
-      cloudEnabled: hasSupabase,
+      isConfigured: hasFirebase,
+      cloudEnabled: hasFirebase,
       signUp,
       signIn,
+      signInWithGoogle,
       signOut,
     }),
-    [user, loading, signUp, signIn, signOut],
+    [user, loading, signUp, signIn, signInWithGoogle, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

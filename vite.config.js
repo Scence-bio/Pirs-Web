@@ -2,8 +2,11 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  // GitHub Actions sets CI=true → Pages path; local/dev stays at /
-  base: process.env.CI ? '/Pirs-Web/' : '/',
+  // Local: `/`. GitHub Pages / CI / explicit deploy: `/Pirs-Web/`
+  base:
+    process.env.GITHUB_PAGES === '1' || process.env.CI === 'true'
+      ? '/Pirs-Web/'
+      : '/',
   plugins: [react()],
   build: {
     target: 'es2020',

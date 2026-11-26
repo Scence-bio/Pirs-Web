@@ -1,6 +1,15 @@
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  setDoc,
+  where,
+} from 'firebase/firestore'
 import { QUIZZES } from '../data/quizzes'
-import { hasSupabase, supabase } from './supabase'
 import { loadCustomQuizzes, saveCustomQuizzes } from '../data/customQuizzes'
+import { db, hasFirebase } from './firebase'
 
 function localKey(userId) {
   return `pirs-quizzes-${userId}`
@@ -26,59 +35,48 @@ function saveLocalForUser(userId, list) {
   localStorage.setItem(localKey(userId), JSON.stringify(list))
 }
 
-function rowToQuiz(row) {
+function docToQuiz(id, data) {
   return {
-    id: row.id,
+    id,
     custom: true,
-    ownerId: row.owner_id,
-    title: { ckb: row.title, ar: row.title, en: row.title },
-    description: {
-      ckb: row.description || '',
-      ar: row.description || '',
-      en: row.description || '',
-    },
-    timeLimit: row.time_limit,
-    questions: row.questions,
-  }
-}
-
-function quizToRow(quiz, ownerId) {
-  const title = typeof quiz.title === 'string' ? quiz.title : quiz.title?.ckb || quiz.title?.en || ''
-  const description =
-    typeof quiz.description === 'string'
-      ? quiz.description
-      : quiz.description?.ckb || quiz.description?.en || ''
-  return {
-    id: quiz.id,
-    owner_id: ownerId,
-    title,
-    description,
-    time_limit: quiz.timeLimit,
-    questions: quiz.questions,
-    updated_at: new Date().toISOString(),
+    ownerId: data.ownerId,
+    title: data.title,
+    description: data.description || { ckb: '', ar: '', en: '' },
+    timeLimit: data.timeLimit || 20,
+    questions: data.questions || [],
+    updatedAt: data.updatedAt || 0,
   }
 }
 
 export async function listUserQuizzes(user) {
   if (!user) return []
-  if (hasSupabase && user.provider === 'supabase') {
-    const { data, error } = await supabase
-      .from('quizzes')
-      .select('*')
-      .eq('owner_id', user.id)
-      .order('created_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(rowToQuiz)
+  if (hasFirebase && user.provider === 'firebase') {
+    const q = query(collection(db, 'quizzes'), where('ownerId', '==', user.id))
+    const snap = await getDocs(q)
+    return snap.docs
+      .map((d) => docToQuiz(d.id, d.data()))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
   }
   return loadLocalForUser(user.id)
 }
 
 export async function saveUserQuiz(user, quiz) {
   if (!user) throw new Error('auth_required')
-  if (hasSupabase && user.provider === 'supabase') {
-    const row = quizToRow(quiz, user.id)
-    const { error } = await supabase.from('quizzes').upsert(row)
-    if (error) throw error
+  if (hasFirebase && user.provider === 'firebase') {
+    const now = Date.now()
+    await setDoc(
+      doc(db, 'quizzes', quiz.id),
+      {
+        ownerId: user.id,
+        title: quiz.title,
+        description: quiz.description,
+        timeLimit: quiz.timeLimit,
+        questions: quiz.questions,
+        updatedAt: now,
+        ...(quiz.createdAt ? {} : { createdAt: now }),
+      },
+      { merge: true },
+    )
     return quiz
   }
   const list = loadLocalForUser(user.id)
@@ -89,9 +87,8 @@ export async function saveUserQuiz(user, quiz) {
 
 export async function removeUserQuiz(user, id) {
   if (!user) throw new Error('auth_required')
-  if (hasSupabase && user.provider === 'supabase') {
-    const { error } = await supabase.from('quizzes').delete().eq('id', id).eq('owner_id', user.id)
-    if (error) throw error
+  if (hasFirebase && user.provider === 'firebase') {
+    await deleteDoc(doc(db, 'quizzes', id))
     return
   }
   const next = loadLocalForUser(user.id).filter((q) => q.id !== id)

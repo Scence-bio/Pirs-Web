@@ -1,4 +1,5 @@
-import { hasSupabase, supabase } from './supabase'
+import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
+import { db, hasFirebase } from './firebase'
 
 const ROOM_PREFIX = 'pirs-room-'
 const CHANNEL = 'pirs-kahoot'
@@ -37,25 +38,29 @@ export function writeLocalRoom(room) {
 }
 
 export async function readRoom(pin) {
-  if (hasSupabase) {
-    const { data, error } = await supabase.from('rooms').select('payload').eq('pin', pin).maybeSingle()
-    if (error) throw error
-    if (data?.payload) return data.payload
+  if (hasFirebase) {
+    const snap = await getDoc(doc(db, 'rooms', pin))
+    if (snap.exists()) return snap.data().payload || null
   }
   return readLocalRoom(pin)
 }
 
 export async function writeRoom(room, hostUserId = null) {
-  // Always mirror locally for fast same-device play
   const raw = writeLocalRoom(room)
-  if (hasSupabase) {
-    const { error } = await supabase.from('rooms').upsert({
-      pin: room.pin,
-      host_id: hostUserId || room.hostUserId || null,
-      payload: room,
-      updated_at: new Date().toISOString(),
-    })
-    if (error) console.warn('[rooms]', error.message)
+  if (hasFirebase) {
+    try {
+      await setDoc(
+        doc(db, 'rooms', room.pin),
+        {
+          hostId: hostUserId || room.hostUserId || null,
+          payload: room,
+          updatedAt: Date.now(),
+        },
+        { merge: true },
+      )
+    } catch (err) {
+      console.warn('[rooms]', err.message)
+    }
   }
   return raw
 }
@@ -89,42 +94,29 @@ export function subscribeRoom(pin, onChange) {
   channel?.addEventListener('message', onMessage)
   cleanups.push(() => channel?.removeEventListener('message', onMessage))
 
-  let pollId = 0
-  if (hasSupabase) {
-    const rt = supabase
-      .channel(`room-${pin}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'rooms', filter: `pin=eq.${pin}` },
-        (payload) => {
-          if (payload.new?.payload) onChange(payload.new.payload)
-        },
-      )
-      .subscribe()
-    cleanups.push(() => {
-      supabase.removeChannel(rt)
-    })
-    pollId = window.setInterval(async () => {
-      if (document.visibilityState === 'hidden') return
-      try {
-        const room = await readRoom(pin)
-        if (room) onChange(room)
-      } catch {
-        /* ignore */
-      }
-    }, 2500)
+  if (hasFirebase) {
+    const unsub = onSnapshot(
+      doc(db, 'rooms', pin),
+      (snap) => {
+        if (snap.exists() && snap.data().payload) onChange(snap.data().payload)
+      },
+      (err) => console.warn('[rooms subscribe]', err.message),
+    )
+    cleanups.push(unsub)
   } else {
-    pollId = window.setInterval(() => {
+    const pollId = window.setInterval(() => {
       if (document.visibilityState === 'hidden') return
       const room = readLocalRoom(pin)
       if (room) onChange(room)
     }, 1500)
+    cleanups.push(() => clearInterval(pollId))
   }
-  cleanups.push(() => clearInterval(pollId))
 
   const onVisible = () => {
     if (document.visibilityState !== 'visible') return
-    readRoom(pin).then((room) => room && onChange(room)).catch(() => {})
+    readRoom(pin)
+      .then((room) => room && onChange(room))
+      .catch(() => {})
   }
   document.addEventListener('visibilitychange', onVisible)
   cleanups.push(() => document.removeEventListener('visibilitychange', onVisible))
