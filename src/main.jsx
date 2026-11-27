@@ -10,6 +10,27 @@ function idle(fn, timeout = 2000) {
   else window.setTimeout(fn, Math.min(timeout, 400))
 }
 
+/** Android Chrome: keep join/auth forms above the soft keyboard */
+function trackKeyboardInset() {
+  const root = document.documentElement
+  const vv = window.visualViewport
+  if (!vv) {
+    root.style.setProperty('--kb-inset', '0px')
+    return
+  }
+  const sync = () => {
+    const inset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+    root.style.setProperty('--kb-inset', `${inset}px`)
+    root.classList.toggle('kb-open', inset > 80)
+  }
+  vv.addEventListener('resize', sync, { passive: true })
+  vv.addEventListener('scroll', sync, { passive: true })
+  window.addEventListener('orientationchange', () => window.setTimeout(sync, 250), {
+    passive: true,
+  })
+  sync()
+}
+
 // Paint first, then fonts / SW / Firebase warm-up
 idle(() => {
   import('@fontsource-variable/vazirmatn/wght.css')
@@ -23,6 +44,7 @@ idle(() => {
 }, 3000)
 
 idle(() => prefetchFirebase(), 1500)
+trackKeyboardInset()
 
 const root = document.getElementById('root')
 root.replaceChildren()

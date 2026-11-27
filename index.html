@@ -6,15 +6,18 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#46178f" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#46178f" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#2d0b66" />
     <meta name="color-scheme" content="dark" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="پرس" />
     <meta name="application-name" content="پرس" />
+    <meta name="format-detection" content="telephone=no" />
     <meta
       name="description"
       content="پرس — یاریی پرسیار. کویز، کۆد، تایمەر و لیدەربۆرد."
@@ -26,11 +29,13 @@
       #root {
         margin: 0;
         min-height: 100%;
+        min-height: 100svh;
         min-height: 100dvh;
         background: #46178f;
         color: #fff;
       }
       .boot {
+        min-height: 100svh;
         min-height: 100dvh;
         display: grid;
         place-items: center;
